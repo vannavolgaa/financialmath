@@ -1,25 +1,26 @@
 from dataclasses import dataclass
-from instruments.option import Option
+from financialmath.instruments.option import Option
 from abc import abstractmethod, ABC
 from enum import Enum 
+import numpy as np
 
 @dataclass
 class OptionGreeks: 
-    delta: float 
-    vega: float 
-    theta: float 
-    rho: float 
-    epsilon: float 
-    gamma: float 
-    vanna: float 
-    volga: float 
-    charm: float 
-    veta: float 
-    vera: float 
-    speed: float 
-    zomma: float 
-    color: float 
-    ultima: float 
+    delta: float = np.nan
+    vega: float = np.nan
+    theta: float = np.nan
+    rho: float = np.nan
+    epsilon: float = np.nan
+    gamma: float = np.nan
+    vanna: float = np.nan
+    volga: float = np.nan
+    charm: float = np.nan
+    veta: float = np.nan
+    vera: float = np.nan
+    speed: float = np.nan
+    zomma: float = np.nan
+    color: float = np.nan
+    ultima: float = np.nan
 
 class OptionValuationFunction(ABC): 
     @abstractmethod
@@ -81,7 +82,7 @@ class ImpliedOptionMarketData:
     sigma : float 
 
 @dataclass
-class OptionSummary: 
+class OptionValuationResult: 
     instrument : Option
     price : float 
     sensitivities : OptionGreeks

@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.stats import norm
 from typing import List
-from pricing.option.obj import OptionValuationFunction, OptionValuation
+from financialmath.pricing.option.obj import OptionValuationFunction, OptionValuation
 
 class BlackScholesTool: 
 
