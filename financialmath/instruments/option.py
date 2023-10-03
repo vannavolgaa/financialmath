@@ -56,7 +56,7 @@ class OptionPayoffList(Enum):
     unknown = None 
     european_vanilla_call = OptionPayoff(option=OptionalityType.call,
                             exercise=ExerciseType.european) 
-    european_vanilla_put = OptionPayoff( option=OptionalityType.put, 
+    european_vanilla_put = OptionPayoff(option=OptionalityType.put, 
                             exercise=ExerciseType.european)                       
     european_binary_call = OptionPayoff(option=OptionalityType.call, 
                             exercise=ExerciseType.european, binary = True)

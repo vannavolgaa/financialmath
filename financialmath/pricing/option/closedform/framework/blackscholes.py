@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.stats import norm
 from typing import List
-from financialmath.pricing.option.obj import OptionValuationFunction, OptionValuation
+from financialmath.pricing.option.obj import OptionValuationFunction
 
 class BlackScholesTool: 
 
@@ -30,7 +30,8 @@ class BlackScholesTool:
     def compute_d2(self):
         t = self.t
         sigma = self.sigma
-        return self.d1()-sigma*np.sqrt(t)
+        d1 = self.compute_d1()
+        return d1-sigma*np.sqrt(t)
     
 class BlackScholesEuropeanVanillaCall(OptionValuationFunction): 
 
@@ -53,9 +54,9 @@ class BlackScholesEuropeanVanillaCall(OptionValuationFunction):
         self.Nd2 = norm.cdf(self.d2)
         self.nd1 = norm.pdf(self.d1)
         self.nd2 = norm.pdf(self.d2)
-        self.method = 'Black Scholes closed form formula'
+
     def method(self) -> str: 
-        return 'Black Scholes closed form formula'
+        return 'Black Scholes closed form vanilla european call option formula'
     def price(self) -> float or np.array: 
         S = self.S
         K = self.K
@@ -187,7 +188,7 @@ class BlackScholesEuropeanVanillaPut(OptionValuationFunction):
         self.eurocall = BlackScholesEuropeanVanillaCall(S=S, K=K, r=r, q=q, 
                                                     t=t, sigma=sigma)
     def method(self) -> str: 
-        return 'Black Scholes closed form formula'
+        return 'Black Scholes closed form vanilla european put option formula'
     def price(self) -> float or np.array: 
         S = self.S
         K = self.K

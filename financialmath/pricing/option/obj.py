@@ -75,20 +75,22 @@ class OptionValuationFunction(ABC):
     def color(self) -> float or np.array: 
         pass 
 
+@dataclass
 class ImpliedOptionMarketData: 
     S : float 
     r : float 
     q : float 
     sigma : float 
+    F : float
 
 @dataclass
 class OptionValuationResult: 
     instrument : Option
+    marketdata : ImpliedOptionMarketData
     price : float 
     sensitivities : OptionGreeks
     method : str
-    marketdata : ImpliedOptionMarketData
-
+    
 
 
 
