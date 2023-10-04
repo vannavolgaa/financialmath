@@ -7,6 +7,7 @@ class OptionalityType(Enum):
     call = 1 
     put = 2 
     chooser = 3 
+  
 
 class UnderlyingType(Enum): 
     spot = 1
@@ -46,6 +47,7 @@ class OptionPayoff:
     exercise : ExerciseType
     binary : Optional[bool] = False
     forward_start : Optional[bool] = False
+    gap : Optional[bool] = False
     barrier_type : Optional[BarrierType] = None
     barrier_obervation_type : Optional[ObservationType] = None
     lookback_strike : Optional[LookbackStrike] = None  
@@ -91,6 +93,7 @@ class OptionSpecification:
     forward: bool = False
     barrier_up : float = math.nan
     barrier_down : float = math.nan
+    gap_trigger : float = math.nan 
 
 @dataclass
 class Option: 
