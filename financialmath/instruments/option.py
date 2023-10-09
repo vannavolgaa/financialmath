@@ -8,7 +8,6 @@ class OptionalityType(Enum):
     put = 2 
     chooser = 3 
   
-
 class UnderlyingType(Enum): 
     spot = 1
     forward = 2
@@ -26,7 +25,7 @@ class BarrierType(Enum):
     double_knock_in = 5
     double_knock_out = 6
 
-class LookbackStrike(Enum): 
+class LookbackStrikeType(Enum): 
     floating_strike = 1 
     fixed_strike = 2
 
@@ -83,17 +82,20 @@ class OptionTenor:
     lookback_window_begin  : Optional[float] = math.nan 
     barrier_window_end  : Optional[float] = math.nan 
     lookback_window_end  : Optional[float] = math.nan 
-    choser: Optional[float] = math.nan 
-    forward : Optional[float] = math.nan 
+    forward_start : Optional[float] = math.nan 
 
 @dataclass
 class OptionSpecification: 
     strike : float 
     tenor : OptionTenor
-    forward: bool = False
+    on_future: bool = False
     barrier_up : float = math.nan
     barrier_down : float = math.nan
     gap_trigger : float = math.nan 
+    forward_strike_pct : float = math.nan 
+    forward_barrier_up_pct : float = math.nan
+    forward_barrier_down_pct : float = math.nan
+    forward_gap_trigger_pct : float = math.nan 
 
 @dataclass
 class Option: 
@@ -104,7 +106,17 @@ class Option:
         payoff_list = list(OptionPayoffList)
         try: return [p for p in payoff_list if p.value == self.payoff][0]
         except: return OptionPayoffList.unknown 
-    
+
+@dataclass
+class ChoserOption:
+    options : List[Option]
+    t : float 
+
+@dataclass
+class CompoundOption: 
+    option : Option 
+    underlying_option : Option
+  
 class CreateOption: 
 
     @staticmethod

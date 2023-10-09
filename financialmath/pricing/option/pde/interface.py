@@ -7,8 +7,6 @@ from financialmath.pricing.option.pde.framework.scheme import (OneFactorScheme, 
 from financialmath.pricing.option.pde.framework.grid import (RecursiveGrid, 
 GridObject, BumpGrid, PricingGrid)
 
-
-
 @dataclass
 class PDEBlackScholesObject: 
 
@@ -102,7 +100,8 @@ class PDEBlackScholesObject:
                                     price=valuation.price(), 
                                     sensitivities=valuation.greeks(), 
                                     method=self.get_method())
-        
+
+
 @dataclass
 class PDEBlackScholes:
 
