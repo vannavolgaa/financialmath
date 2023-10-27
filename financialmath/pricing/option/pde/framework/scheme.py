@@ -15,7 +15,6 @@ class SchemeAbstract(ABC):
 class ImplicitScheme(SchemeAbstract): 
 
     volmatrix : np.array
-    S : float
     dx : float 
     dt : float 
     r : float 

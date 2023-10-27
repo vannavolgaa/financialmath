@@ -6,7 +6,6 @@ import math
 class OptionalityType(Enum): 
     call = 1 
     put = 2 
-    chooser = 3 
   
 class UnderlyingType(Enum): 
     spot = 1
@@ -42,36 +41,18 @@ class ObservationType(Enum):
 
 @dataclass
 class OptionPayoff: 
-    option : OptionalityType 
+    option_type : OptionalityType 
     exercise : ExerciseType
+    future : bool = False
     binary : Optional[bool] = False
-    forward_start : Optional[bool] = False
     gap : Optional[bool] = False
+    forward_start : bool = False
     barrier_type : Optional[BarrierType] = None
     barrier_obervation_type : Optional[ObservationType] = None
-    lookback_strike : Optional[LookbackStrike] = None  
+    lookback_strike : Optional[LookbackStrikeType] = None  
     lookback_method : Optional[LookbackMethod] = None    
     lookback_obervation : Optional[ObservationType] = None   
-
-class OptionPayoffList(Enum): 
-    unknown = None 
-    european_vanilla_call = OptionPayoff(option=OptionalityType.call,
-                            exercise=ExerciseType.european) 
-    european_vanilla_put = OptionPayoff(option=OptionalityType.put, 
-                            exercise=ExerciseType.european)                       
-    european_binary_call = OptionPayoff(option=OptionalityType.call, 
-                            exercise=ExerciseType.european, binary = True)
-    european_binary_put = OptionPayoff(option=OptionalityType.put, 
-                            exercise=ExerciseType.european, binary=True)
-    american_vanilla_call = OptionPayoff(option=OptionalityType.call, 
-                            exercise=ExerciseType.american) 
-    american_vanilla_put = OptionPayoff(option=OptionalityType.put, 
-                            exercise=ExerciseType.american) 
-    bermudan_vanilla_call = OptionPayoff(option=OptionalityType.call, 
-                            exercise=ExerciseType.bermudan) 
-    bermudan_vanilla_put = OptionPayoff(option=OptionalityType.put, 
-                            exercise=ExerciseType.bermudan) 
-
+    
 @dataclass
 class OptionTenor: 
     expiry : float 
@@ -85,50 +66,50 @@ class OptionTenor:
     forward_start : Optional[float] = math.nan 
 
 @dataclass
+class OptionSteps:
+    tenor : OptionTenor 
+    N : int 
+
+    @staticmethod
+    def t_to_step(t, dt): 
+        factor = t/dt
+        if not math.isnan(factor):
+            return round(t/dt)
+        else: return math.nan
+
+    def __post_init__(self): 
+        tenor = self.tenor
+        N = self.N 
+        dt = tenor.expiry/N 
+        self.expiry = N
+        self.bermudan = [self.t_to_step(t=t, dt=dt) for t in tenor.bermudan]
+        self.barrier_discrete = [self.t_to_step(t=t, dt=dt) 
+                                for t in tenor.barrier_discrete]
+        self.barrier_window_end  = self.t_to_step(t=tenor.barrier_window_end, dt=dt)
+        self.barrier_window_begin = self.t_to_step(t=tenor.barrier_window_begin, dt=dt) 
+        self.lookback_discrete = [self.t_to_step(t=t, dt=dt) 
+                                for t in tenor.lookback_discrete]
+        self.lookback_window_begin  = self.t_to_step(t=tenor.lookback_window_begin, dt=dt) 
+        self.lookback_window_end  = self.t_to_step(t=tenor.lookback_window_end, dt=dt)
+        #self.choser = self.t_to_step(t=tenor.choser, dt=dt)
+
+@dataclass
 class OptionSpecification: 
     strike : float 
     tenor : OptionTenor
-    on_future: bool = False
+    rebate : float = 0
     barrier_up : float = math.nan
     barrier_down : float = math.nan
     gap_trigger : float = math.nan 
-    forward_strike_pct : float = math.nan 
-    forward_barrier_up_pct : float = math.nan
-    forward_barrier_down_pct : float = math.nan
-    forward_gap_trigger_pct : float = math.nan 
+    binary_amout : float = math.nan 
+
+    def get_steps(self, N:int) -> OptionSteps:
+        self.steps = OptionSteps(tenor=self.tenor, N=N)
 
 @dataclass
 class Option: 
-    specification : OptionSpecification
-    payoff : OptionPayoff
+    specification : OptionSpecification 
+    payoff : OptionPayoff 
+    chooser : bool = False 
 
-    def payoff_type(self): 
-        payoff_list = list(OptionPayoffList)
-        try: return [p for p in payoff_list if p.value == self.payoff][0]
-        except: return OptionPayoffList.unknown 
 
-@dataclass
-class ChoserOption:
-    options : List[Option]
-    t : float 
-
-@dataclass
-class CompoundOption: 
-    option : Option 
-    underlying_option : Option
-  
-class CreateOption: 
-
-    @staticmethod
-    def european_vanilla_call(strike: float, expiry: float, fwd = False) -> Option:
-        tenor = OptionTenor(expiry=expiry)
-        spec = OptionSpecification(strike=strike, tenor=tenor,forward=fwd)
-        return Option(specification=spec, 
-                payoff=OptionPayoffList.european_vanilla_call.value)
-
-    @staticmethod
-    def european_vanilla_put(strike: float, expiry: float, fwd = False) -> Option:
-        tenor = OptionTenor(expiry=expiry)
-        spec = OptionSpecification(strike=strike, tenor=tenor, forward=fwd)
-        return Option(specification=spec, payoff=OptionPayoffList.european_vanilla_put.value)
-    

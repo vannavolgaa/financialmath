@@ -1,19 +1,46 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import List
 import numpy as np
-from financialmath.pricing.option.closedform.framework.blackscholes import (
-BlackScholesEuropeanVanillaCall,BlackScholesEuropeanVanillaPut, BlackEuropeanVanilla)
-from financialmath.instruments.option import Option, OptionPayoffList, OptionPayoff
-from financialmath.pricing.option.obj import (ImpliedOptionMarketData, OptionValuationFunction, 
+from financialmath.pricing.option.closedform.framework.blackscholes import *
+from financialmath.instruments.option import (Option, OptionPayoff, OptionalityType, 
+    ExerciseType)
+from financialmath.pricing.option.schema import (ImpliedOptionMarketData, OptionValuationFunction, 
                                               OptionGreeks, OptionValuationResult)
 
 
+class PayoffClosedFrom(Enum): 
+    unknown = 1
+    european_vanilla_call = OptionPayoff(option_type=OptionalityType.call,
+                            exercise=ExerciseType.european) 
+    european_vanilla_put = OptionPayoff(option_type=OptionalityType.put, 
+                            exercise=ExerciseType.european)   
+    fut_european_vanilla_call = OptionPayoff(option_type=OptionalityType.call,
+                            exercise=ExerciseType.european, future=True) 
+    fut_european_vanilla_put = OptionPayoff(option_type=OptionalityType.put, 
+                            exercise=ExerciseType.european, future=True)
+
+    @staticmethod
+    def find_payoff(payoff : OptionPayoff): 
+        try : return [pcf for pcf in list(PayoffClosedFrom) 
+                        if pcf.value == payoff][0]
+        except Exception as e: return PayoffClosedFrom.unknown
+
+class ValuationMethodClosedFormMapping(Enum): 
+    european_vanilla_call = BlackScholesEuropeanVanillaCall
+    european_vanilla_put = BlackScholesEuropeanVanillaPut
+    fut_european_vanilla_call = BlackEuropeanVanillaCall
+    fut_european_vanilla_put = BlackEuropeanVanillaPut
+
+    def find_method(payoff_type: PayoffClosedFrom): 
+        try : return [v.value for v in list(ValuationMethodClosedFormMapping) 
+                        if v.name == payoff_type.name][0]
+        except Exception as e: return None
 
 @dataclass
 class ClosedFormOptionPricerObject: 
 
-    payoff : OptionPayoff
-    future : bool 
+    payoff_type : PayoffClosedFrom
     options : List[Option]
     marketdata: List[ImpliedOptionMarketData]
     id_number : List[int]
@@ -21,94 +48,85 @@ class ClosedFormOptionPricerObject:
 
     def __post_init__(self): 
         self.n = len(self.options)
-        self.S = np.array([m.S for m in self.marketdata])
-        self.r = np.array([m.r for m in self.marketdata])
-        self.q = np.array([m.q for m in self.marketdata])
-        self.sigma = np.array([m.sigma for m in self.marketdata])
-        self.F = np.array([m.F for m in self.marketdata])
-        self.K = np.array([o.specification.strike for o in self.options])
-        self.t = np.array([o.specification.tenor.expiry for o in self.options])
+        self.inputdata = BlackScholesInputData(
+            S = [m.S for m in self.marketdata], 
+            K = [o.specification.strike for o in self.options], 
+            r = [m.r for m in self.marketdata], 
+            q = [m.q for m in self.marketdata], 
+            F = [m.F for m in self.marketdata], 
+            t = [o.specification.tenor.expiry for o in self.options], 
+            sigma = [m.sigma for m in self.marketdata])
+        self.valuationmethod = ValuationMethodClosedFormMapping.find_method(self.payoff_type)
+        self.get_model()
 
-    def get_valuation_class(self) -> OptionValuationFunction: 
-        match self.payoff: 
-            case OptionPayoffList.european_vanilla_call.value:
-                if self.future:
-                    return BlackEuropeanVanilla(
-                        F= self.F, K= self.K, r= self.r, 
-                        t= self.t, sigma= self.sigma, 
-                        Call=True
-                    )
-                else: 
-                    return BlackScholesEuropeanVanillaCall(
-                        S= self.S, K= self.K, r= self.r, 
-                        q= self.q, t= self.t, sigma= self.sigma, 
-                    )
-            case OptionPayoffList.european_vanilla_put.value:
-                if self.future:
-                    return BlackEuropeanVanilla(
-                        F= self.F, K= self.K, r= self.r, 
-                        t= self.t, sigma= self.sigma, 
-                        Call=False
-                    )
-                else: 
-                    return BlackScholesEuropeanVanillaPut(
-                        S= self.S, K= self.K, r= self.r, 
-                        q= self.q, t= self.t, sigma= self.sigma, 
-                    )
-            case OptionPayoffList.european_binary_put.value:
-                return None
-            case OptionPayoffList.european_vanilla_call.value:
-                return None
+    def get_model(self): 
+        try: self.model = self.valuationmethod(inputdata=self.inputdata)
+        except Exception as e: self.model = None
+
+    def compute_greeks(self) -> List[OptionGreeks]: 
+        fall_back_greeks = [OptionGreeks() for i in range(0,self.n)]
+        try: 
+            if self.sensitivities:
+                delta = QuantTool.convert_array_to_list(self.model.delta())
+                vega = QuantTool.convert_array_to_list(self.model.vega())
+                theta = QuantTool.convert_array_to_list(self.model.theta())
+                rho = QuantTool.convert_array_to_list(self.model.rho())
+                epsilon = QuantTool.convert_array_to_list(self.model.epsilon())
+                gamma = QuantTool.convert_array_to_list(self.model.gamma())
+                vanna = QuantTool.convert_array_to_list(self.model.vanna())
+                volga = QuantTool.convert_array_to_list(self.model.volga())
+                ultima = QuantTool.convert_array_to_list(self.model.ultima())
+                speed = QuantTool.convert_array_to_list(self.model.speed())
+                zomma = QuantTool.convert_array_to_list(self.model.zomma())
+                color = QuantTool.convert_array_to_list(self.model.color())
+                veta = QuantTool.convert_array_to_list(self.model.veta())
+                #vera = QuantTool.convert_array_to_list(self.model.vera())
+                charm = QuantTool.convert_array_to_list(self.model.charm())
+         
+                return [OptionGreeks(delta=delta[i], vega=vega[i], 
+                                    theta=theta[i], rho=rho[i], 
+                                    epsilon=epsilon[i], gamma=gamma[i], 
+                                    vanna=vanna[i], volga=volga[i], 
+                                    charm=charm[i], veta=veta[i], 
+                                    vera=np.nan, speed=speed[i], 
+                                    zomma=zomma[i], color=color[i], 
+                                    ultima=ultima[i]) for i in range(0,self.n)]
+            else: return fall_back_greeks
+        except Exception as e: 
+            print(str(e))
+            return fall_back_greeks
+
+    def compute_price(self) -> List[float]: 
+        try: 
+            return QuantTool.convert_array_to_list(self.model.price())
+        except Exception as e: 
+            return [np.nan for i in range(0,self.n)]
+
+    def get_method_name(self) -> str: 
+        try: return self.model.method()
+        except Exception as e: return None 
     
-    def get_greeks(self, valuationclass : OptionValuationFunction) -> List[OptionGreeks]: 
-        delta = list(valuationclass.delta())
-        vega = list(valuationclass.vega())
-        theta = list(valuationclass.theta())
-        rho = list(valuationclass.rho())
-        epsilon = list(valuationclass.epsilon())
-        gamma = list(valuationclass.gamma())
-        vanna = list(valuationclass.vanna())
-        volga = list(valuationclass.volga())
-        ultima = list(valuationclass.ultima())
-        speed = list(valuationclass.speed())
-        zomma = list(valuationclass.zomma())
-        color = list(valuationclass.color())
-        veta = list(valuationclass.veta())
-        #vera = list(valuationclass.vera())
-        charm = list(valuationclass.charm())
-        return [OptionGreeks(delta=delta[i], vega=vega[i], 
-                            theta=theta[i], rho=rho[i], 
-                            epsilon=epsilon[i], gamma=gamma[i], 
-                            vanna=vanna[i], volga=volga[i], 
-                            charm=charm[i], veta=veta[i], 
-                            vera=np.nan, speed=speed[i], 
-                            zomma=zomma[i], color=color[i], 
-                            ultima=ultima[i]) for i in range(0,self.n)]
-
-    def main(self) -> dict: 
-        if self.n==0: return dict()
-        else:
-            valuationclass = self.get_valuation_class()
-            price = list(valuationclass.price())
-            if self.sensitivities: greeks = self.get_greeks(valuationclass=valuationclass)
-            else: greeks = [OptionGreeks() for i in range(0,self.n)]
-            method = valuationclass.method()
-            result = [OptionValuationResult(instrument=i, price=p, sensitivities=g, 
-                                            method = method, marketdata=m) 
-                                            for i, p, g, m in 
-                                            zip(self.options, price, greeks, 
-                                            self.marketdata)]
-          
-            
-            return dict(zip(self.id_number, result))
+    def send_to_valuation_schema(self):
+        
+        return [OptionValuationResult(instrument=i, price=p, 
+                                        sensitivities=g, 
+                                        method = self.get_method_name(), 
+                                        marketdata=m) 
+                                        for i, p, g, m in 
+                                        zip(
+                                        self.options, 
+                                        self.compute_price(), 
+                                        self.compute_greeks(), 
+                                        self.marketdata
+                                        )
+                ]
 
 @dataclass
-class ClosedFormOptionPricer: 
-
+class ClosedFormOptionPricer:
     marketdata : ImpliedOptionMarketData or List[ImpliedOptionMarketData]
     option : Option or List[Option]
-    sensitivities = True
-    
+    sensitivities : bool = True
+
     def __post_init__(self): 
         if not isinstance(self.option, list):
             self.marketdata = [self.marketdata]
@@ -116,75 +134,39 @@ class ClosedFormOptionPricer:
         self.n = len(self.option)
         self.id_number = list(range(0, self.n))
         self.payoffs = [o.payoff for o in self.option]
-        self.futopt = [o.specification.forward for o in self.option]
-        
-    def get_optionpricer_object(self, payoff: OptionPayoff, fut: bool) -> ClosedFormOptionPricerObject: 
-        payoff_filter = [(o.payoff == payoff) & (o.specification.forward == fut)  
-                        for o in self.option]
-        opt = [o for o,f in zip(self.option,payoff_filter) if f]
-        mda = [m for m,f in zip(self.marketdata,payoff_filter) if f]
-        idn = [i for i,f in zip(self.id_number,payoff_filter) if f]
-        return ClosedFormOptionPricerObject(payoff=payoff, future=fut, 
-                                            options=opt, 
-                                            marketdata=mda,
-                                            id_number=idn, 
-                                            sensitivities=self.sensitivities)
-                                                  
-    def european_vanilla_call(self) -> dict: 
-        return self.get_optionpricer_object(
-            payoff = OptionPayoffList.european_vanilla_call.value,
-            fut = False).main()
-       
-    def european_vanilla_put(self) -> dict: 
-        return self.get_optionpricer_object(
-            payoff = OptionPayoffList.european_vanilla_put.value,
-            fut = False).main()
-
-    def fut_european_vanilla_call(self) -> dict: 
-        return self.get_optionpricer_object(
-            payoff = OptionPayoffList.european_vanilla_call.value,
-            fut = True
-            ).main()
-       
-    def fut_european_vanilla_put(self) -> dict: 
-        return self.get_optionpricer_object(
-            payoff = OptionPayoffList.european_vanilla_put.value,
-            fut = True
-            ).main()
-
-    def manage_unpriced_options(self, dict_result: dict) -> dict:
-        priced_option_ids =  list(dict_result.keys())
-        unpriced_options_filter = [i in priced_option_ids for i in self.id_number]
-        unpriced_options = [o for o, f in zip(self.option, unpriced_options_filter)
-                            if f is False]
-        unused_market_data = [m for m, f in zip(self.marketdata, unpriced_options_filter)
-                            if f is False]
-        unpriced_options_ids = [i for i, f in zip(self.id_number, unpriced_options_filter)
-                            if f is False]
-        result_unpriced = [OptionValuationResult(instrument = o, marketdata = m,
-                                                price = np.nan, sensitivities=False, 
-                                                method = None) 
-                                                for o, m in zip(
-                                                    unpriced_options,
-                                                    unused_market_data
-                                                    )]
-        return dict(zip(unpriced_options_ids, result_unpriced))
-
-    def manage_priced_options(self) -> dict: 
-        output = dict()
-        result_list = [self.european_vanilla_call(), self.european_vanilla_put(), 
-                    self.fut_european_vanilla_call(), self.fut_european_vanilla_put()]
-        for r in result_list: 
-            output.update(r)
-        return output
+        self.closed_form_payoff = [PayoffClosedFrom.find_payoff(payoff=p)
+                                    for p in self.payoffs]
     
-    def main(self) -> List[OptionValuationResult] or OptionValuationResult: 
-        result = dict()
-        priced_options = self.manage_priced_options()
-        unpriced_options = self.manage_unpriced_options(dict_result=priced_options)
-        result.update(priced_options)
-        result.update(unpriced_options)
-        result = dict(sorted(result.items()))
-        output = list(result.values())
+    def pricing(self, payoff_type: PayoffClosedFrom): 
+        myfilter = [(clp == payoff_type) for clp in self.closed_form_payoff]
+        if not myfilter: return dict()
+        opt = [o for o,f in zip(self.option,myfilter) if f]
+        mda = [m for m,f in zip(self.marketdata,myfilter) if f]
+        idn = [i for i,f in zip(self.id_number,myfilter) if f]
+        pricer = ClosedFormOptionPricerObject(
+            payoff_type=payoff_type, 
+            options = opt, 
+            marketdata=mda, 
+            id_number=idn, 
+            sensitivities=self.sensitivities)
+        return dict(zip(idn, pricer.send_to_valuation_schema()))
+    
+    def main(self): 
+        output = dict()
+        for p in list(PayoffClosedFrom): 
+            output.update(self.pricing(p))
+        output = dict(sorted(output.items()))
+        output = list(output.values())
         if len(output)==1: return output[0]
         else: return output
+
+
+
+
+    
+
+
+
+    
+
+    

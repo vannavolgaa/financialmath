@@ -1,304 +1,157 @@
 import numpy as np
 from scipy import sparse, interpolate
-from financialmath.instruments.option import Option
-from financialmath.pricing.option.obj import OptionGreeks
+from financialmath.instruments.option import Option, OptionSteps
+from financialmath.pricing.option.schema import OptionGreeks
 from financialmath.instruments.option import * 
-
-@dataclass
-class OptionSteps:
-    tenor : OptionTenor 
-    N : int 
-
-    @staticmethod
-    def t_to_step(t, dt): 
-        factor = t/dt
-        if not np.isnan(factor):
-            return round(t/dt)
-        else: return np.nan
-
-    def __post_init__(self): 
-        tenor = self.tenor
-        N = self.N 
-        dt = tenor.expiry/N 
-        self.expiry = N
-        self.bermudan = [self.t_to_step(t=t, dt=dt) for t in tenor.bermudan]
-        self.barrier_discrete = [self.t_to_step(t=t, dt=dt) 
-                                for t in tenor.barrier_discrete]
-        self.barrier_window_end  = self.t_to_step(t=tenor.barrier_window_end, dt=dt)
-        self.barrier_window_begin = self.t_to_step(t=tenor.barrier_window_begin, dt=dt) 
-        self.lookback_discrete = [self.t_to_step(t=t, dt=dt) 
-                                for t in tenor.lookback_discrete]
-        self.lookback_window_begin  = self.t_to_step(t=tenor.lookback_window_begin, dt=dt) 
-        self.lookback_window_end  = self.t_to_step(t=tenor.lookback_window_end, dt=dt)
-        self.choser = self.t_to_step(t=tenor.choser, dt=dt)
-
-@dataclass
-class RecursiveGrid: 
-
-    instrument: Option
-    transition_matrixes: list[sparse.csc_matrix]
-    spot_vector : np.array
-
-    def __post_init__(self): 
-        self.N = len(self.transition_matrixes)
-        self.M = len(self.spot_vector)
-        self.steps = OptionSteps(tenor=self.instrument.specification.tenor, N=self.N)
-
-    def binary_payoff(self, option_payoff: np.array) -> np.array:
-        if self.instrument.exotic.binary:
-            payoff = self.instrument.exotic.binary_payoff
-            return (option_payoff>0).astype(int)*payoff
-        else: 
-            return option_payoff
-    
-    def barrier_payoff_condition(self) -> np.array: 
-        b_up = self.instrument.exotic.barrier.up
-        b_down = self.instrument.exotic.barrier.down
-        match self.instrument.exotic.barrier.barrier_type: 
-            case BarrierType.up_and_in:
-                condition = (self.spot_vector>b_up)
-            case BarrierType.up_and_out:
-                condition = (self.spot_vector<b_up)
-            case BarrierType.down_and_in: 
-                condition = (self.spot_vector<b_down)
-            case BarrierType.down_and_out: 
-                condition = (self.spot_vector>b_down)
-            case BarrierType.double_knock_in:
-                condition = (self.spot_vector<b_down) and (self.spot_vector>b_up)
-            case BarrierType.double_knock_in:
-                condition = (self.spot_vector>b_down) and (self.spot_vector<b_up) 
-            case _: 
-                condition = np.repeat(1, self.M)
-        return condition.astype(int)
-
-    def barrier_payoff(self, option_payoff: np.array) -> np.array: 
-        try:
-            condition = self.barrier_payoff_condition()
-            return condition*option_payoff
-        except AttributeError: 
-            return option_payoff
-    
-    def payoff(self) -> np.array: 
-        K = self.instrument.specification.strike
-        S = self.spot_vector
-        match self.instrument.option:
-            case OptionalityType.call: 
-                payoff = np.maximum(S-K, 0)
-            case OptionalityType.put: 
-                payoff = np.maximum(K-S, 0)
-            case _: 
-                return np.repeat(np.nan, self.M)
-        payoff = self.barrier_payoff(option_payoff=payoff)
-        return self.binary_payoff(option_payoff=payoff)
-                
-    def early_exercise(self, option_price: np.array, n: int) -> np.array: 
-        match self.instrument.exercise:
-            case ExerciseType.european: 
-                return option_price
-            case ExerciseType.american:
-                return np.maximum(self.payoff(), option_price)
-            case ExerciseType.bermudan: 
-                if n in self.steps.bermudan: 
-                    return np.maximum(self.payoff(), option_price)
-                else: return option_price
-            case _: 
-                return np.repeat(np.nan, self.M)
-    
-    def touch_barrier(self, option_price: np.array, n: int) -> np.array: 
-        condition = self.barrier_payoff_condition()
-        match self.instrument.barrier.observation: 
-            case ObservationType.continuous: 
-                return condition*option_price
-            case ObservationType.discrete: 
-                if n in self.steps.barrier_discrete: 
-                    return condition*option_price
-                else: return option_price
-            case ObservationType.window:
-                end = self.steps.barrier_window_end
-                begin = self.steps.barrier_window_begin
-                if n >= begin and n <= end: 
-                    return condition*option_price
-                else: return option_price
-
-    def pathbound(self, option_price: np.array, n: int) -> np.array: 
-        try : price = self.touch_barrier(option_price=option_price, n=n)
-        except AttributeError: 
-            price = option_price
-        return self.early_exercise(option_price=price, n=n)
-
-    def generate(self) -> np.array: 
-        grid_shape = (self.M,self.N)
-        grid = np.zeros(grid_shape)
-        price = self.payoff()
-        grid[:, self.N-1] = price
-        for i in range(self.N-2, -1, -1): 
-            tmat = self.transition_matrixes[i+1]
-            price = tmat.dot(price)
-            price = self.pathbound(option_price=price, n=i)
-            grid[:,i] = price
-        return grid
+from financialmath.pricing.option.payoff import PayOffModule
 
 @dataclass
 class OptionRecursiveGrid: 
 
     option: Option
     transition_matrixes: list[sparse.csc_matrix]
-    spot_vector : np.array
+    S : float
+    dx : float
+    M : int 
 
     def __post_init__(self): 
         self.N = len(self.transition_matrixes)
-        self.M = len(self.spot_vector)
-        self.specification = self.option.specification
-        self.payoff = self.option.payoff
-        self.steps = OptionSteps(tenor=self.instrument.specification.tenor, N=self.N)
+        self.option.get_steps(N=self.N)
     
-    def gap_condition(self, G: float) -> np.array: 
-        S = self.spot_vector
-        match self.payoff.option:
-            case OptionalityType.call: 
-                return (S>G).astype(int)
-            case OptionalityType.put: 
-                return (S<G).astype(int)
-            case _: 
-                return np.repeat(np.nan, self.M)
+    @staticmethod
+    def generate_spot_vector(dx: float, S: float, M : int) -> np.array: 
+        spotvec = np.empty(M)
+        spotvec[0] = S*np.exp((-dx*M/2))
+        for i in range(1,M): 
+            spotvec[i] = spotvec[i-1]*np.exp(dx)
+        return spotvec
 
-    def terminal_payoff(
-        self, K:float, b_up: float, b_down: float, 
-        binary_payoff: float, G: float
-        ) -> np.array: 
+    def get_payoff_module(self, S:float, option : Option) -> np.array: 
+        spot_vector = self.generate_spot_vector(S=S, dx=self.dx, M=self.M)
+        payoff = option.payoff
+        spec = option.specification
+        K = spec.strike
+        G = spec.gap_trigger
+        Bu = spec.barrier_up
+        Bd = spec.barrier_down
+        Bia = spec.binary_amout
+        R = spec.rebate
+        if option.payoff.forward_start: 
+            return PayOffModule(
+                S=spot_vector, K=S*K, Bu=S*Bu, Bd=S*Bd,
+                rebate=R, binary_amount=Bia, G = S*G)
+        else: 
+            return PayOffModule(
+                S=spot_vector, K=K, Bu=Bu, Bd=Bd,
+                rebate=R, binary_amount=Bia, G = G)  
 
-        S = self.spot_vector
-        gap_cond = self.gap_condition(G=G)
+    def generate_terminal_payoff(self, S: float, option: Option) -> np.array: 
+        payoff_module = self.get_payoff_module(S=S, option = option)
+        return payoff_module.payoff(option_payoff=option.payoff)
 
-        match self.payoff.option:
-            case OptionalityType.call: 
-                if self.payoff.option.gap: payoff = gap_cond*(S - K)
-                else: payoff = np.maximum(S-K, 0)
-            case OptionalityType.put: 
-                if self.payoff.option.gap: payoff = gap_cond*(K - S)
-                else: payoff = np.maximum(K-S, 0)
-            case _: 
-                return np.repeat(np.nan, self.M)
+    def generate_barrier_condition(self, S:float, option: Option) -> np.array: 
+        payoff_module = self.get_payoff_module(S=S, option=option)
+        return payoff_module.barrier_condition(option.payoff.barrier_type)
 
-        barrier_cond = barrier_payoff_condition(b_up=b_up, d_down=b_down)
-        payoff = payoff * barrier_cond
-        if self.payoff.binary: 
-            binary_cond = (payoff > 0).astype(int)
-            return binary_cond * binary_payoff
-        else: return payoff
-                 
-    def barrier_payoff_condition(
-        self, b_up: float, b_down:float
-        ) -> np.array: 
-        
-        S=self.spot_vector
-        match self.payoff.barrier_type: 
-            case BarrierType.up_and_in:
-                condition = (S>b_up)
-            case BarrierType.up_and_out:
-                condition = (S<b_up)
-            case BarrierType.down_and_in: 
-                condition = (S<b_down)
-            case BarrierType.down_and_out: 
-                condition = (S>b_down)
-            case BarrierType.double_knock_in:
-                condition = (S<b_down) and (S>b_up)
-            case BarrierType.double_knock_in:
-                condition = (S>b_down) and (S<b_up) 
-            case _: 
-                condition = np.repeat(1, self.M)
-        return condition.astype(int)
-
-    def path_boundaries(
-        self, option_price: np.array,K:float, 
-        b_up: float, b_down: float, n : int,
-        binary_payoff: float, G : float) -> np.array: 
-        price = self.path_touch_barrier(option_price=option_price, n=n,
-                                        b_up=b_up, b_down=b_down)
-        price = self.early_exercise(option_price=price, n=n,
-                                    K=K, b_up=b_up, b_down=b_down, 
-                                    binary_payoff=binary_payoff, G=G)
-        return price 
-
-    def path_touch_barrier(
-        self, option_price: np.array, n: int, 
-        b_up : float, b_down:float
-        ) -> np.array: 
-        condition = self.barrier_payoff_condition(b_up=b_up, b_down=b_down)
-        match self.instrument.barrier.observation: 
+    def touch_barrier(self, S:float, n:int, option_price: np.array, 
+                    option:Option) -> np.array: 
+        condition = self.generate_barrier_condition(S=S, option=option)
+        match option.payoff.barrier_obervation_type: 
             case ObservationType.continuous: 
                 return condition*option_price
             case ObservationType.discrete: 
-                if n in self.steps.barrier_discrete: 
+                if n in option.steps.barrier_discrete: 
                     return condition*option_price
                 else: return option_price
             case ObservationType.window:
-                end = self.steps.barrier_window_end
-                begin = self.steps.barrier_window_begin
+                end = option.steps.barrier_window_end
+                begin = option.steps.barrier_window_begin
                 if n >= begin and n <= end: 
                     return condition*option_price
                 else: return option_price
             case _: 
                 return option_price
     
-    def early_exercise(
-        self, option_price: np.array,K:float, 
-        b_up: float, b_down: float, n:int,
-        binary_payoff: float, G : float
-        ) -> np.array:
-
-        terminal_payoff = self.terminal_payoff(K=K, b_up=b_up, 
-                                            b_down=b_down, 
-                                            binary_payoff=binary_payoff, 
-                                            G = G)
-        match self.payoff.exercise:
+    def early_exercise(self, S:float, n:int, option_price: np.array, 
+                    option:Option) -> np.array:
+        terminal_payoff = self.generate_terminal_payoff(S=S, option = option)
+        match option.payoff.exercise:
             case ExerciseType.european: 
                 return option_price
             case ExerciseType.american:
                 return np.maximum(terminal_payoff, option_price)
             case ExerciseType.bermudan: 
-                if n in self.steps.bermudan: 
+                if n in options.steps.bermudan: 
                     return np.maximum(terminal_payoff, option_price)
                 else: return option_price
             case _: 
                 return np.repeat(np.nan, self.M)
-    
+
+    def option_price_grid(self, S: float, option_price:np.array, 
+                        from_step: int, to_step: int, 
+                        option: Option=None): 
+        n_step = from_step-to_step
+        grid_shape = (self.M, n_step)
+        grid = np.zeros(grid_shape)
+        grid[:, (n_step)-1] = option_price
+        price = option_price
+        for i in range(n_step-2,-1,-1): 
+            n = i + to_step
+            tmat = self.transition_matrixes[n]
+            price = tmat.dot(price)
+            if option is None: 
+                grid[:, i] = price
+            else: 
+                price =  self.early_exercise(S=S, n=n, 
+                                            option_price=price, 
+                                            option=option)
+                price =  self.touch_barrier(S=S, n=n, 
+                                            option_price=price, 
+                                            option=option)
+                grid[:, i] = price  
+        return grid  
+
+    def generate_classic_option_grid(self): 
+        payoff = self.generate_terminal_payoff(S=self.S, option=self.option)
+        return self.option_price_grid(S=self.S, option_price = payoff, 
+                                    from_step=self.N,to_step=0, 
+                                    option = self.option)
+        
 @dataclass
-class BumpGrid: 
-    volatility_up : bool = True
-    volatility_down : bool = True
-    r_up : bool = True
-    q_up : bool = True
+class OptionPriceGrids: 
+    initial : np.array 
+    vol_up : np.array = None
+    vol_down : np.array = None
+    r_up : np.array = None
+    q_up : np.array = None
     spot_bump_size: float = 0.01
     volatility_bump_size: float = 0.01
     r_bump_size : float = 0.01
     q_bump_size : float = 0.01
 
 @dataclass
-class GridObject: 
-    initial : np.array 
-    bump : BumpGrid = BumpGrid()
-    vol_up : np.array = None
-    vol_down : np.array = None
-    r_up : np.array = None
-    q_up : np.array = None
-
-@dataclass
 class PricingGrid: 
 
+    grid : OptionPriceGrids 
+    M : int
     S : float 
     dt : float 
-    spot_vector : np.array
-    grid : GridObject 
-    interpolation_method = 'cubic'
+    dx: float
+    interpolation_method: str = 'cubic'
+
+    def __post_init__(self): 
+        self.spot_vector = OptionRecursiveGrid.generate_spot_vector(dx=self.dx, 
+                            S=self.S, M=self.M)
 
     def read_grid(self, grid:np.array, pos: int) -> np.array: 
         try: return grid[:,pos]
         except TypeError: return np.repeat(np.nan, len(self.spot_vector))
 
     def interpolate_value(self, value:float, x: np.array, y:np.array) -> float:
-        f = interpolate.interp1d(x=x, y=y, kind = self.interpolation_method)
-        return f(value)
+        try: 
+            f = interpolate.interp1d(x=x, y=y, kind = self.interpolation_method)
+            return f(value).item()
+        except: return np.nan 
     
     def greeks(self) -> OptionGreeks: 
 
@@ -310,10 +163,10 @@ class PricingGrid:
         V_0_vold = self.read_grid(self.grid.vol_down, 0)
         V_dt_volu = self.read_grid(self.grid.vol_up, 1)
 
-        h_spot = self.grid.bump.spot_bump_size
-        h_vol = self.grid.bump.volatility_bump_size
-        h_r = self.grid.bump.r_bump_size
-        h_q = self.grid.bump.q_bump_size
+        h_spot = self.grid.spot_bump_size
+        h_vol = self.grid.volatility_bump_size
+        h_r = self.grid.r_bump_size
+        h_q = self.grid.q_bump_size
 
         delta = self.delta(S=self.S, vector = V_0, h = h_spot)
         vega = self.vega(S=self.S,uvec=V_0_volu,dvec=V_0, h=h_vol)
@@ -348,9 +201,9 @@ class PricingGrid:
     
     def price(self) -> float: 
         V_0 = self.read_grid(self.grid.initial, 0)
-        return self.option_price(self.S, vector)
+        return self.option_price(self.S, V_0)
 
-    def option_price(self, S: float, vector) -> float: 
+    def option_price(self, S: float, vector: np.array) -> float: 
         return self.interpolate_value(S, self.spot_vector, vector)
     
     def delta(self, S:float, vector: np.array, h: float) -> float: 
@@ -440,4 +293,5 @@ class PricingGrid:
 
     def ultima(self) -> float: 
         return np.nan
+
 

@@ -1,55 +1,35 @@
 import numpy as np
 from scipy.stats import norm
 from typing import List
-from financialmath.pricing.option.obj import OptionValuationFunction
+from financialmath.pricing.option.schema import OptionValuationFunction
+from financialmath.quanttool import QuantTool
+from dataclasses import dataclass
 
-class BlackScholesTool: 
+@dataclass 
+class BlackScholesInputData: 
+    S : float or list[float]
+    F : float or list[float]
+    r : float or list[float]
+    q : float or list[float]
+    sigma : float or list[float]
+    t : float or list[float]
+    K : float or list[float]
 
-    def __init__(self, S, K, r, q, sigma, t):
-
-        self.S = S
-        self.K = K
-        self.q = q
-        self.r = r
-        self.t = t
-        self.sigma = sigma
-
-    def __post_init__(self): 
-        self.d1 = self.compute_d1()
-        self.d2 = self.compute_d2()
-
-    def compute_d1(self):
-        S = self.S
-        K = self.K
-        r = self.r
-        q = self.q
-        t = self.t
-        sigma = self.sigma
-        return(np.log(S/K)+(r-q+sigma**2/2)*t)/(sigma*np.sqrt(t))
-   
-    def compute_d2(self):
-        t = self.t
-        sigma = self.sigma
-        d1 = self.compute_d1()
-        return d1-sigma*np.sqrt(t)
-    
 class BlackScholesEuropeanVanillaCall(OptionValuationFunction): 
 
-    def __init__(self, S: float or np.array, 
-                K: float or np.array, 
-                r: float or np.array, 
-                q: float or np.array, 
-                sigma: float or np.array, 
-                t: float or np.array):
-        self.S = S
-        self.K = K
-        self.q = q
-        self.r = r
-        self.t = t
-        self.sigma = sigma
-        self.tool = BlackScholesTool(S=S, K=K, r=r, q=q, sigma=sigma, t=t)
-        self.d1 = self.tool.compute_d1()
-        self.d2 = self.tool.compute_d2()
+    def __init__(self, inputdata:BlackScholesInputData):
+        self.S = QuantTool.convert_to_numpy_array(x=inputdata.S)
+        self.K = QuantTool.convert_to_numpy_array(x=inputdata.K)
+        self.q = QuantTool.convert_to_numpy_array(x=inputdata.q)
+        self.r = QuantTool.convert_to_numpy_array(x=inputdata.r)
+        self.t = QuantTool.convert_to_numpy_array(x=inputdata.t)
+        self.sigma = QuantTool.convert_to_numpy_array(x=inputdata.sigma)
+        self.d1 = QuantTool.compute_blackscholes_d1(S = self.S,K = self.K,
+                                                    r = self.r,q = self.q,
+                                                    t = self.t, sigma = self.sigma)
+        self.d2 = QuantTool.compute_blackscholes_d2(S = self.S,K = self.K,
+                                                    r = self.r,q = self.q,
+                                                    t = self.t, sigma = self.sigma)
         self.Nd1 = norm.cdf(self.d1)
         self.Nd2 = norm.cdf(self.d2)
         self.nd1 = norm.pdf(self.d1)
@@ -166,27 +146,25 @@ class BlackScholesEuropeanVanillaCall(OptionValuationFunction):
     
 class BlackScholesEuropeanVanillaPut(OptionValuationFunction): 
 
-    def __init__(self, S: float or np.array, 
-                K: float or np.array, 
-                r: float or np.array, 
-                q: float or np.array, 
-                sigma: float or np.array, 
-                t: float or np.array):
-        self.S = S
-        self.K = K
-        self.q = q
-        self.r = r
-        self.t = t
-        self.sigma = sigma
-        self.tool = BlackScholesTool(S=S, K=K, r=r, q=q, sigma=sigma, t=t)
-        self.d1 = self.tool.compute_d1()
-        self.d2 = self.tool.compute_d2()
+    def __init__(self, inputdata:BlackScholesInputData):
+        self.S = QuantTool.convert_to_numpy_array(x=inputdata.S)
+        self.K = QuantTool.convert_to_numpy_array(x=inputdata.K)
+        self.q = QuantTool.convert_to_numpy_array(x=inputdata.q)
+        self.r = QuantTool.convert_to_numpy_array(x=inputdata.r)
+        self.t = QuantTool.convert_to_numpy_array(x=inputdata.t)
+        self.sigma = QuantTool.convert_to_numpy_array(x=inputdata.sigma)
+        self.d1 = QuantTool.compute_blackscholes_d1(S = self.S,K = self.K,
+                                                    r = self.r,q = self.q,
+                                                    t = self.t, sigma = self.sigma)
+        self.d2 = QuantTool.compute_blackscholes_d2(S = self.S,K = self.K,
+                                                    r = self.r,q = self.q,
+                                                    t = self.t, sigma = self.sigma)
         self.Nd1 = norm.cdf(-self.d1)
         self.Nd2 = norm.cdf(-self.d2)
         self.nd1 = norm.pdf(-self.d1)
         self.nd2 = norm.pdf(-self.d2)
-        self.eurocall = BlackScholesEuropeanVanillaCall(S=S, K=K, r=r, q=q, 
-                                                    t=t, sigma=sigma)
+        self.eurocall = BlackScholesEuropeanVanillaCall(inputdata=inputdata)
+
     def method(self) -> str: 
         return 'Black Scholes closed form vanilla european put option formula'
     def price(self) -> float or np.array: 
@@ -255,22 +233,64 @@ class BlackScholesEuropeanVanillaPut(OptionValuationFunction):
         return self.eurocall.zomma()
     def ultima(self) -> float or np.array: 
         return self.eurocall.ultima()
-    
-class BlackEuropeanVanilla(OptionValuationFunction): 
-    def __init__(self, F: float or np.array, 
-                K: float or np.array, 
-                r: float or np.array, 
-                sigma: float or np.array, 
-                t: float or np.array, Call = True):
+ 
+class BlackEuropeanVanillaCall(OptionValuationFunction): 
 
+    def __init__(self, inputdata:BlackScholesInputData):
+        self.F = QuantTool.convert_to_numpy_array(x=inputdata.F)
+        self.K = QuantTool.convert_to_numpy_array(x=inputdata.K)
+        self.r = QuantTool.convert_to_numpy_array(x=inputdata.r)
+        self.t = QuantTool.convert_to_numpy_array(x=inputdata.t)
+        self.sigma = QuantTool.convert_to_numpy_array(x=inputdata.sigma)
         self.df = np.exp(-self.r*self.t) 
-
-        if Call: 
-            self.bs = BlackScholesEuropeanVanillaCall(S=F, K=K, r=0, q=0, 
-                                                    t=t, sigma=sigma)  
-        else: 
-            self.bs = BlackScholesEuropeanVanillaPut(S=F, K=K, r=0, q=0, 
-                                                    t=t, sigma=sigma) 
+        inputdata_bs = BlackScholesInputData(S=F,r=0,q=0,t=t, sigma=sigma, K=K)
+        self.bs = BlackScholesEuropeanVanillaCall(inputdata_bs) 
+    
+    def method(self) -> str: 
+        return 'Black closed form formula'
+    def price(self) -> float or np.array: 
+        return self.df*self.bs.price()
+    def delta(self) -> float or np.array: 
+        return self.df*self.bs.delta()
+    def vega(self) -> float or np.array: 
+        return self.df*self.bs.vega()
+    def gamma(self) -> float or np.array: 
+        return self.df*self.bs.gamma()
+    def rho(self) -> float or np.array: 
+        return self.t*self.df*self.price()
+    def epsilon(self) -> float or np.array: 
+        return 0
+    def theta(self) -> float or np.array: 
+        return self.df*(self.bs.theta() - self.r*self.bs.price())
+    def vanna(self) -> float or np.array: 
+        return self.df*self.bs.vanna()
+    def volga(self) -> float or np.array: 
+        return self.df*self.bs.volga()
+    def speed(self) -> float or np.array: 
+        return self.df*self.bs.speed()
+    def charm(self) -> float or np.array: 
+        return self.df*(self.bs.charm() - self.r*self.bs.delta()) 
+    def veta(self) -> float or np.array: 
+        return self.df*(self.bs.veta() - self.r*self.bs.vega())  
+    def vera(self) -> float or np.array: 
+        return self.t*self.df*self.vega()
+    def color(self) -> float or np.array: 
+        return self.df*(self.bs.color() - self.r*self.bs.gamma())   
+    def zomma(self) -> float or np.array: 
+        return self.df*self.bs.zomma()
+    def ultima(self) -> float or np.array: 
+        return self.df*self.bs.ultima()
+ 
+class BlackEuropeanVanillaPut(OptionValuationFunction): 
+    def __init__(self, inputdata:BlackScholesInputData):
+        self.F = QuantTool.convert_to_numpy_array(x=inputdata.F)
+        self.K = QuantTool.convert_to_numpy_array(x=inputdata.K)
+        self.r = QuantTool.convert_to_numpy_array(x=inputdata.r)
+        self.t = QuantTool.convert_to_numpy_array(x=inputdata.t)
+        self.sigma = QuantTool.convert_to_numpy_array(x=inputdata.sigma)
+        self.df = np.exp(-self.r*self.t) 
+        inputdata_bs = BlackScholesInputData(S=F,r=0,q=0,t=t, sigma=sigma, K=K)
+        self.bs = BlackScholesEuropeanVanillaPut(inputdata_bs) 
     def method(self) -> str: 
         return 'Black closed form formula'
     def price(self) -> float or np.array: 
