@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
 from typing import List
-import numpy as np
 from financialmath.pricing.option.closedform.framework.blackscholes import *
 from financialmath.instruments.option import (Option, OptionPayoff, OptionalityType, 
     ExerciseType)
@@ -10,7 +9,6 @@ from financialmath.pricing.option.schema import (ImpliedOptionMarketData, Option
 
 
 class PayoffClosedFrom(Enum): 
-    unknown = 1
     european_vanilla_call = OptionPayoff(option_type=OptionalityType.call,
                             exercise=ExerciseType.european) 
     european_vanilla_put = OptionPayoff(option_type=OptionalityType.put, 
@@ -20,11 +18,10 @@ class PayoffClosedFrom(Enum):
     fut_european_vanilla_put = OptionPayoff(option_type=OptionalityType.put, 
                             exercise=ExerciseType.european, future=True)
 
-    @staticmethod
     def find_payoff(payoff : OptionPayoff): 
         try : return [pcf for pcf in list(PayoffClosedFrom) 
                         if pcf.value == payoff][0]
-        except Exception as e: return PayoffClosedFrom.unknown
+        except Exception as e: None
 
 class ValuationMethodClosedFormMapping(Enum): 
     european_vanilla_call = BlackScholesEuropeanVanillaCall
@@ -43,7 +40,6 @@ class ClosedFormOptionPricerObject:
     payoff_type : PayoffClosedFrom
     options : List[Option]
     marketdata: List[ImpliedOptionMarketData]
-    id_number : List[int]
     sensitivities : bool
 
     def __post_init__(self): 
@@ -56,70 +52,23 @@ class ClosedFormOptionPricerObject:
             F = [m.F for m in self.marketdata], 
             t = [o.specification.tenor.expiry for o in self.options], 
             sigma = [m.sigma for m in self.marketdata])
-        self.valuationmethod = ValuationMethodClosedFormMapping.find_method(self.payoff_type)
-        self.get_model()
+        self.valuation = self.valuation_object()
 
-    def get_model(self): 
-        try: self.model = self.valuationmethod(inputdata=self.inputdata)
-        except Exception as e: self.model = None
-
-    def compute_greeks(self) -> List[OptionGreeks]: 
-        fall_back_greeks = [OptionGreeks() for i in range(0,self.n)]
-        try: 
-            if self.sensitivities:
-                delta = QuantTool.convert_array_to_list(self.model.delta())
-                vega = QuantTool.convert_array_to_list(self.model.vega())
-                theta = QuantTool.convert_array_to_list(self.model.theta())
-                rho = QuantTool.convert_array_to_list(self.model.rho())
-                epsilon = QuantTool.convert_array_to_list(self.model.epsilon())
-                gamma = QuantTool.convert_array_to_list(self.model.gamma())
-                vanna = QuantTool.convert_array_to_list(self.model.vanna())
-                volga = QuantTool.convert_array_to_list(self.model.volga())
-                ultima = QuantTool.convert_array_to_list(self.model.ultima())
-                speed = QuantTool.convert_array_to_list(self.model.speed())
-                zomma = QuantTool.convert_array_to_list(self.model.zomma())
-                color = QuantTool.convert_array_to_list(self.model.color())
-                veta = QuantTool.convert_array_to_list(self.model.veta())
-                #vera = QuantTool.convert_array_to_list(self.model.vera())
-                charm = QuantTool.convert_array_to_list(self.model.charm())
-         
-                return [OptionGreeks(delta=delta[i], vega=vega[i], 
-                                    theta=theta[i], rho=rho[i], 
-                                    epsilon=epsilon[i], gamma=gamma[i], 
-                                    vanna=vanna[i], volga=volga[i], 
-                                    charm=charm[i], veta=veta[i], 
-                                    vera=np.nan, speed=speed[i], 
-                                    zomma=zomma[i], color=color[i], 
-                                    ultima=ultima[i]) for i in range(0,self.n)]
-            else: return fall_back_greeks
-        except Exception as e: 
-            print(str(e))
-            return fall_back_greeks
-
-    def compute_price(self) -> List[float]: 
-        try: 
-            return QuantTool.convert_array_to_list(self.model.price())
-        except Exception as e: 
-            return [np.nan for i in range(0,self.n)]
-
-    def get_method_name(self) -> str: 
-        try: return self.model.method()
-        except Exception as e: return None 
+    def valuation_object(self) -> OptionValuationFunction:
+        p = self.payoff_type
+        method = ValuationMethodClosedFormMapping.find_method(p)
+        return method(self.inputdata)
     
-    def send_to_valuation_schema(self):
-        
-        return [OptionValuationResult(instrument=i, price=p, 
-                                        sensitivities=g, 
-                                        method = self.get_method_name(), 
-                                        marketdata=m) 
-                                        for i, p, g, m in 
-                                        zip(
-                                        self.options, 
-                                        self.compute_price(), 
-                                        self.compute_greeks(), 
-                                        self.marketdata
-                                        )
-                ]
+    def main(self) -> List[OptionValuationResult]: 
+        instruments = self.instruments
+        marketdata = self.inputdata
+        price = self.valuation.get_price(n=self.n)
+        if self.sensitivities:
+            sensi = self.valuation.get_greeks(n=self.n)
+        else: sensi = [OptionGreeks()]*self.n
+        method = self.valuation.get_method(n=self.n)
+        data = zip(instruments, marketdata, price, sensi, method)
+        return [OptionValuationResult(i,d,p,s,m) for i,d,p,s,m in data]
 
 @dataclass
 class ClosedFormOptionPricer:
@@ -137,7 +86,7 @@ class ClosedFormOptionPricer:
         self.closed_form_payoff = [PayoffClosedFrom.find_payoff(payoff=p)
                                     for p in self.payoffs]
     
-    def pricing(self, payoff_type: PayoffClosedFrom): 
+    def pricing(self, payoff_type: PayoffClosedFrom) -> dict: 
         myfilter = [(clp == payoff_type) for clp in self.closed_form_payoff]
         if not myfilter: return dict()
         opt = [o for o,f in zip(self.option,myfilter) if f]
@@ -149,16 +98,15 @@ class ClosedFormOptionPricer:
             marketdata=mda, 
             id_number=idn, 
             sensitivities=self.sensitivities)
-        return dict(zip(idn, pricer.send_to_valuation_schema()))
+        return dict(zip(idn, pricer.main()))
     
-    def main(self): 
+    def main(self) -> List[OptionValuationResult]: 
         output = dict()
         for p in list(PayoffClosedFrom): 
             output.update(self.pricing(p))
         output = dict(sorted(output.items()))
         output = list(output.values())
-        if len(output)==1: return output[0]
-        else: return output
+        return output
 
 
 

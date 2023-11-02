@@ -41,24 +41,14 @@ class FutureValuationObject:
         premium_obj = FuturePremiumList.get_premium_method(future_type=ftype)
         return [premium_obj(i) for i in self.inputdata]
     
-    def get_price(self) -> List[float]: 
-        return QuantTool.convert_array_to_list(self.valuation.price())
-    
-    def get_sensitivities(self) -> List[FutureSensibility]: 
-        if self.sensitivities:
-            return [FutureSensibility(**s) for s in self.valuation.sensi()]
-        else: 
-            return [FutureSensibility() for i in range(0, self.n)]
-    
-    def get_method(self) -> List[str]: 
-        return [self.valuation.method()]*self.n 
-    
     def main(self) -> List[FutureValuationResult]: 
         instruments = self.instruments
         marketdata = self.inputdata
-        price = self.get_price()
-        sensi = self.get_sensitivities()
-        method = self.get_method()
+        price = self.valuation.get_price(n=self.n)
+        if self.sensitivities:
+            sensi = self.valuation.get_all_sensisibilities(n=self.n)
+        else: sensi = [FutureSensibility() for i in range(0, self.n)]
+        method = self.valuation.get_method(n=self.n)
         data = zip(instruments, marketdata, price, sensi, method)
         return [FutureValuationResult(i,d,p,s,m) for i,d,p,s,m in data]
     
