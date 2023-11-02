@@ -13,6 +13,7 @@ class SettlementType(Enum):
     cash = 1
     physical = 2
 
+@dataclass
 class Future: 
     expiry: float 
     future_type : FutureType

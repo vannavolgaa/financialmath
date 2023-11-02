@@ -1,6 +1,17 @@
 import numpy as np 
+from typing import List
 
 class QuantTool: 
+
+    @staticmethod
+    def dictlist_to_listdict(mydict: dict): 
+        keys = list(mydict.keys())
+        length = len(mydict[keys[0]])
+        output = []
+        for i in range(0, length): 
+            output.append({k : mydict[k][i] for k in keys})
+        return output 
+
     
     @staticmethod
     def convert_to_numpy_array(x:float or List[float]): 
