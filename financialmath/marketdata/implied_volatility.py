@@ -2,18 +2,11 @@ from dataclasses import dataclass
 from typing import List
 
 @dataclass
-class ImpliedVolatilityPoint: 
+class OptionVolatilityPoint: 
     t : float 
-    strike : float 
-    moneyness : float 
-    delta : float 
-    volatility : float 
+    moneyness: float 
+    sigma : float 
 
 @dataclass
-class ImpliedVolatilitySmile: 
-    t : float 
-    points : List[ImpliedVolatilityPoint]
-
-@dataclass
-class ImpliedVolatilitySurface: 
-    smiles : ImpliedVolatilitySmile
+class OptionVolatilitySurface: 
+    points : List[OptionVolatilityPoint]

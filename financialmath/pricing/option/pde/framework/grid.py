@@ -116,7 +116,9 @@ class OptionRecursiveGrid:
         return self.option_price_grid(S=self.S, option_price = payoff, 
                                     from_step=self.N,to_step=0, 
                                     option = self.option)
-        
+
+
+ 
 @dataclass
 class OptionPriceGrids: 
     initial : np.array 

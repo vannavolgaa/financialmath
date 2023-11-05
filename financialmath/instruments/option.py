@@ -40,21 +40,70 @@ class ObservationType(Enum):
     continuous = 1 
     discrete = 2
     window = 3
+    in_fine = 4
 
 @dataclass
 class OptionPayoff: 
     option_type : OptionalityType 
     exercise : ExerciseType
     future : bool = False
-    binary : Optional[bool] = False
-    gap : Optional[bool] = False
+    binary : bool = False
+    gap : bool = False
     forward_start : bool = False
-    barrier_type : Optional[BarrierType] = None
-    barrier_obervation_type : Optional[ObservationType] = None
-    lookback_strike : Optional[LookbackStrikeType] = None  
-    lookback_method : Optional[LookbackMethod] = None    
-    lookback_obervation : Optional[ObservationType] = None   
+    barrier_type : BarrierType = None
+    barrier_obervation : ObservationType = None
+    lookback_strike : LookbackStrikeType = None  
+    lookback_method : LookbackMethod = None    
+    lookback_obervation : ObservationType = None   
+
+    def get_opposite_barrier(self) -> BarrierType: 
+        match self.barrier_type: 
+            case BarrierType.up_and_in: 
+                return BarrierType.up_and_out
+            case BarrierType.up_and_out: 
+                return BarrierType.up_and_in
+            case BarrierType.down_and_in: 
+                return BarrierType.down_and_out
+            case BarrierType.down_and_out: 
+                return BarrierType.down_and_in
+            case BarrierType.double_knock_in: 
+                return BarrierType.double_knock_out
+            case BarrierType.double_knock_out: 
+                return BarrierType.double_knock_in
+            case _: return None
+
+    def is_barrier(self) -> bool: 
+        if (self.barrier_type is None) or (self.barrier_obervation is None):
+            return False
+        else: return True
     
+    def is_lookback(self) -> bool: 
+        cond = (self.lookback_strike is None) or (self.lookback_method is None) or \
+        (self.lookback_obervation is None)
+        if cond:return False
+        else: return True
+
+    def is_in_barrier(self) -> bool: 
+        match self.barrier_type: 
+            case BarrierType.up_and_in: return True
+            case BarrierType.up_and_out: return False
+            case BarrierType.down_and_in: return True
+            case BarrierType.down_and_out: return False
+            case BarrierType.double_knock_in: return True
+            case BarrierType.double_knock_out: return False
+            case _: return False
+    
+    def is_out_barrier(self) -> bool: 
+        match self.barrier_type: 
+            case BarrierType.up_and_in: return False
+            case BarrierType.up_and_out: return True
+            case BarrierType.down_and_in: return False
+            case BarrierType.down_and_out: return True
+            case BarrierType.double_knock_in: return False
+            case BarrierType.double_knock_out: return True
+            case _: return False
+
+
 @dataclass
 class OptionTenor: 
     expiry : float 
@@ -93,7 +142,7 @@ class OptionSteps:
                                 for t in tenor.lookback_discrete]
         self.lookback_window_begin  = self.t_to_step(t=tenor.lookback_window_begin, dt=dt) 
         self.lookback_window_end  = self.t_to_step(t=tenor.lookback_window_end, dt=dt)
-        #self.choser = self.t_to_step(t=tenor.choser, dt=dt)
+        self.forward_start = self.t_to_step(t=tenor.forward_start, dt=dt)
 
 @dataclass
 class OptionSpecification: 
@@ -122,6 +171,7 @@ class PayOffObject:
         self.R = self.specification.rebate
         self.G = self.specification.gap_trigger
         self.binary_amount = self.specification.binary_amout
+        self.rebate = self.specification.rebate
 
     def barrier_condition(self) -> np.array: 
         S=self.S
@@ -171,13 +221,11 @@ class PayOffObject:
         return (abs(payoff)>0).astype(int)*self.binary_amount*np.sign(payoff)
 
     def payoff_vector(self) -> np.array: 
-        opttype = self.payoff.option_type
-        barrtype = self.payoff.barrier_type
         if self.payoff.gap: 
-            payoff = self.gap_payoff(option_type = opttype)
+            payoff = self.gap_payoff()
         else: 
-            payoff = self.vanilla_payoff(option_type = opttype)
-        barrier_cond = self.barrier_condition(barrier_type=barrtype)
+            payoff = self.vanilla_payoff()
+        barrier_cond = self.barrier_condition()
         barrier_invcond = np.abs(np.array(barrier_cond) -1)
         payoff = payoff * barrier_cond + barrier_invcond*self.rebate
         if self.payoff.binary: 

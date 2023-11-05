@@ -6,15 +6,18 @@ from financialmath.pricing.option.schema import ImpliedOptionMarketData, OptionV
 from financialmath.pricing.option.pde.framework.scheme import (OneFactorScheme, OneFactorSchemeList)
 from financialmath.pricing.option.pde.framework.grid import (OptionRecursiveGrid, 
 OptionPriceGrids, PricingGrid)
+from financialmath.marketdata.schema import (OptionVolatilityPoint, 
+VolatilityType, OptionVolatilitySurface, MoneynessType)
+from financialmath.pricing.option.pde.framework.grid2 import (Option)
 
 @dataclass
-class PDEBlackScholesObject: 
+class PDEBlackScholesPricerObject: 
 
     option : Option 
     marketdata : ImpliedOptionMarketData
     M : int = 100
     N : int = 400
-    numerical_scheme : OneFactorSchemeList = OneFactorSchemeList.implicit
+    numerical_scheme : OneFactorScheme = OneFactorSchemeList.implicit
     sensitivities : bool = True
     vol_bump_size: float = 0.01 
     spot_bump_size: float = 0.01 
@@ -28,13 +31,29 @@ class PDEBlackScholesObject:
         self.dt = self.time_step()
         self.dx = self.spot_logstep()
 
+    @staticmethod
+    def generate_spot_vector(dx: float, S: float, M : int) -> np.array: 
+        spotvec = np.empty(M)
+        spotvec[0] = S*np.exp((-dx*M/2))
+        for i in range(1,M): 
+            spotvec[i] = spotvec[i-1]*np.exp(dx)
+        return spotvec
+
     def get_method(self) -> str: 
         return self.method_name + ' w/ ' + self.numerical_scheme.value
 
-    def volatility_matrix(self, sigma:float) -> np.array: 
-        M = self.M 
-        N = self.N 
-        return np.reshape(np.repeat(sigma, M*N), (M,N))
+    def get_volsurface_object(self, sigma:float) -> OptionVolatilitySurface: 
+        list_spot = list(self.generate_spot_vector(self.dx,self.S,self.M))
+        list_t = list(np.cumsum(np.repeat(self.dt, self.N)))
+        volatility_points = []
+        for tt in list_t: 
+            for ss in list_spot: 
+                point = OptionVolatilityPoint(
+                    t=tt,moneyness=ss,sigma=sigma, 
+                    volatility_type=VolatilityType.implied_volatility, 
+                    moneyness_type=MoneynessType.strike)
+                volatility_points.append(point)
+        return OptionVolatilitySurface(points = volatility_points)
     
     def time_step(self) -> float: 
         t = self.option.specification.tenor.expiry
@@ -45,13 +64,14 @@ class PDEBlackScholesObject:
         return sigma * np.sqrt(2*self.dt)
 
     def generate_recursive_grid(self, sigma:float, r:float, q:float) -> np.array: 
-        scheme = self.scheme
-        volmatrix = self.volatility_matrix(sigma=sigma)
+        scheme = self.numerical_scheme
+        volsurface = self.get_volsurface_object(sigma=sigma)
         dt = self.dt
         dx = self.dx
         N = self.N
-        matrixes = scheme(dx=dx, dt=dt, q=q, r=r, 
-                        volmatrix=volmatrix, N=N).transition_matrixes()
+        schemeobj = scheme(dx=dx, dt=dt, q=q, r=r,
+                           volatility_surface=volsurface, N=N)
+        matrixes = schemeobj.transition_matrixes()
         recursive_grid = OptionRecursiveGrid(
                         option=self.option, 
                         transition_matrixes = matrixes, 
@@ -89,7 +109,7 @@ class PDEBlackScholesObject:
                                     method=self.get_method())
 
 @dataclass
-class PDEBlackScholes:
+class PDEBlackScholesPricer:
 
     option: Option or List[Option] 
     marketdata: ImpliedOptionMarketData or List[ImpliedOptionMarketData]
