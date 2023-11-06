@@ -1,153 +1,35 @@
 import numpy as np
 from scipy import sparse, interpolate
-from financialmath.instruments.option import Option, OptionSteps
-from financialmath.pricing.option.schema import OptionGreeks
+from typing import List
 from financialmath.instruments.option import * 
-from financialmath.pricing.option.payoff import PayOffModule
+from financialmath.pricing.option.schema import OptionValuationFunction
+from financialmath.pricing.option.pde.framework.scheme import PDETransitionMatrix
+from financialmath.quanttool import QuantTool
 
-@dataclass
-class OptionRecursiveGrid: 
-
-    option: Option
-    transition_matrixes: list[sparse.csc_matrix]
-    S : float
-    dx : float
-    M : int 
-
-    def __post_init__(self): 
-        self.N = len(self.transition_matrixes)
-        self.option.get_steps(N=self.N)
-    
-    @staticmethod
-    def generate_spot_vector(dx: float, S: float, M : int) -> np.array: 
-        spotvec = np.empty(M)
-        spotvec[0] = S*np.exp((-dx*M/2))
-        for i in range(1,M): 
-            spotvec[i] = spotvec[i-1]*np.exp(dx)
-        return spotvec
-
-    def get_payoff_module(self, S:float, option : Option) -> np.array: 
-        spot_vector = self.generate_spot_vector(S=S, dx=self.dx, M=self.M)
-        payoff = option.payoff
-        spec = option.specification
-        K = spec.strike
-        G = spec.gap_trigger
-        Bu = spec.barrier_up
-        Bd = spec.barrier_down
-        Bia = spec.binary_amout
-        R = spec.rebate
-        if option.payoff.forward_start: 
-            return PayOffModule(
-                S=spot_vector, K=S*K, Bu=S*Bu, Bd=S*Bd,
-                rebate=R, binary_amount=Bia, G = S*G)
-        else: 
-            return PayOffModule(
-                S=spot_vector, K=K, Bu=Bu, Bd=Bd,
-                rebate=R, binary_amount=Bia, G = G)  
-
-    def generate_terminal_payoff(self, S: float, option: Option) -> np.array: 
-        payoff_module = self.get_payoff_module(S=S, option = option)
-        return payoff_module.payoff(option_payoff=option.payoff)
-
-    def generate_barrier_condition(self, S:float, option: Option) -> np.array: 
-        payoff_module = self.get_payoff_module(S=S, option=option)
-        return payoff_module.barrier_condition(option.payoff.barrier_type)
-
-    def touch_barrier(self, S:float, n:int, option_price: np.array, 
-                    option:Option) -> np.array: 
-        condition = self.generate_barrier_condition(S=S, option=option)
-        match option.payoff.barrier_obervation_type: 
-            case ObservationType.continuous: 
-                return condition*option_price
-            case ObservationType.discrete: 
-                if n in option.steps.barrier_discrete: 
-                    return condition*option_price
-                else: return option_price
-            case ObservationType.window:
-                end = option.steps.barrier_window_end
-                begin = option.steps.barrier_window_begin
-                if n >= begin and n <= end: 
-                    return condition*option_price
-                else: return option_price
-            case _: 
-                return option_price
-    
-    def early_exercise(self, S:float, n:int, option_price: np.array, 
-                    option:Option) -> np.array:
-        terminal_payoff = self.generate_terminal_payoff(S=S, option = option)
-        match option.payoff.exercise:
-            case ExerciseType.european: 
-                return option_price
-            case ExerciseType.american:
-                return np.maximum(terminal_payoff, option_price)
-            case ExerciseType.bermudan: 
-                if n in options.steps.bermudan: 
-                    return np.maximum(terminal_payoff, option_price)
-                else: return option_price
-            case _: 
-                return np.repeat(np.nan, self.M)
-
-    def option_price_grid(self, S: float, option_price:np.array, 
-                        from_step: int, to_step: int, 
-                        option: Option=None): 
-        n_step = from_step-to_step
-        grid_shape = (self.M, n_step)
-        grid = np.zeros(grid_shape)
-        grid[:, (n_step)-1] = option_price
-        price = option_price
-        for i in range(n_step-2,-1,-1): 
-            n = i + to_step
-            tmat = self.transition_matrixes[n]
-            price = tmat.dot(price)
-            if option is None: 
-                grid[:, i] = price
-            else: 
-                price =  self.early_exercise(S=S, n=n, 
-                                            option_price=price, 
-                                            option=option)
-                price =  self.touch_barrier(S=S, n=n, 
-                                            option_price=price, 
-                                            option=option)
-                grid[:, i] = price  
-        return grid  
-
-    def generate_classic_option_grid(self): 
-        payoff = self.generate_terminal_payoff(S=self.S, option=self.option)
-        return self.option_price_grid(S=self.S, option_price = payoff, 
-                                    from_step=self.N,to_step=0, 
-                                    option = self.option)
-
-
- 
 @dataclass
 class OptionPriceGrids: 
     initial : np.array 
+    spot_vector : np.array
     vol_up : np.array = None
     vol_down : np.array = None
     r_up : np.array = None
     q_up : np.array = None
+    dt : float = 0
     spot_bump_size: float = 0.01
     volatility_bump_size: float = 0.01
     r_bump_size : float = 0.01
     q_bump_size : float = 0.01
 
 @dataclass
-class PricingGrid: 
+class GridPricingApproximator: 
 
     grid : OptionPriceGrids 
-    M : int
     S : float 
-    dt : float 
-    dx: float
     interpolation_method: str = 'cubic'
 
     def __post_init__(self): 
-        self.spot_vector = OptionRecursiveGrid.generate_spot_vector(dx=self.dx, 
-                            S=self.S, M=self.M)
-
-    def read_grid(self, grid:np.array, pos: int) -> np.array: 
-        try: return grid[:,pos]
-        except TypeError: return np.repeat(np.nan, len(self.spot_vector))
+        self.dt = self.grid.dt
+        self.spot_vector = self.grid.spot_vector
 
     def interpolate_value(self, value:float, x: np.array, y:np.array) -> float:
         try: 
@@ -155,56 +37,6 @@ class PricingGrid:
             return f(value).item()
         except: return np.nan 
     
-    def greeks(self) -> OptionGreeks: 
-
-        V_0 = self.read_grid(self.grid.initial, 0)
-        V_dt = self.read_grid(self.grid.initial, 1)
-        V_0_rp = self.read_grid(self.grid.r_up, 0)
-        V_0_qp = self.read_grid(self.grid.q_up, 0)
-        V_0_volu = self.read_grid(self.grid.vol_up, 0)
-        V_0_vold = self.read_grid(self.grid.vol_down, 0)
-        V_dt_volu = self.read_grid(self.grid.vol_up, 1)
-
-        h_spot = self.grid.spot_bump_size
-        h_vol = self.grid.volatility_bump_size
-        h_r = self.grid.r_bump_size
-        h_q = self.grid.q_bump_size
-
-        delta = self.delta(S=self.S, vector = V_0, h = h_spot)
-        vega = self.vega(S=self.S,uvec=V_0_volu,dvec=V_0, h=h_vol)
-        rho = self.rho(S=self.S,uvec=V_0_rp,dvec=V_0, h=h_r)
-        epsilon = self.epsilon(S=self.S,uvec=V_0_qp,dvec=V_0, h=h_q)
-        theta = self.theta(S=self.S,uvec=V_dt,dvec=V_0, h=self.dt)
-        gamma = self.gamma(S=self.S, vector = V_0, h = h_spot)
-        vanna = self.vanna(S = self.S, uvec = V_0_volu, dvec = V_0, 
-                        h_S = h_spot, h_vol=h_vol)
-        volga = self.volga(S=self.S, uvec=V_0_volu, vec=V_0, dvec=V_0_vold, 
-                        h=h_vol)
-        charm = self.charm(S=self.S, uvec=V_dt,dvec=V_0, h_S=h_spot, 
-                            dt=self.dt)
-        veta = self.veta(S=self.S, uvec_dt=V_dt_volu, dvec_dt=V_dt, 
-                        uvec=V_0_volu, dvec=V_0, h_vol=h_vol, dt=self.dt)
-        speed = self.speed(S=self.S, vector = V_0, h = h_spot)
-        color = self.color(S=self.S, uvec=V_dt, dvec=V_0, 
-                        h_S=h_spot, dt=self.dt)
-        zomma = self.zomma(S=self.S, uvec=V_0_volu, dvec=V_0, 
-                        h_S=h_spot, h_vol=h_vol)
-        ultima = self.ultima()
-        vera = self.vera()
-
-        return OptionGreeks(delta=delta, vega=vega, 
-                            theta=theta, rho=rho, 
-                            epsilon=epsilon, gamma=gamma, 
-                            vanna=vanna, volga=volga, 
-                            charm=charm, veta=veta, 
-                            vera=np.nan, speed=speed, 
-                            zomma=zomma, color=color, 
-                            ultima=ultima)
-    
-    def price(self) -> float: 
-        V_0 = self.read_grid(self.grid.initial, 0)
-        return self.option_price(self.S, V_0)
-
     def option_price(self, S: float, vector: np.array) -> float: 
         return self.interpolate_value(S, self.spot_vector, vector)
     
@@ -295,5 +127,328 @@ class PricingGrid:
 
     def ultima(self) -> float: 
         return np.nan
+
+@dataclass
+class PDEPricing(OptionValuationFunction): 
+
+    grid : OptionPriceGrids 
+    S : float 
+    interpolation_method: str = 'cubic'
+
+    def __post_init__(self): 
+        self.spot_vector = self.grid.spot_vector
+        self.dt = self.grid.dt
+        self.V_0 = self.read_grid(self.grid.initial, 0)
+        self.V_dt = self.read_grid(self.grid.initial, 1)
+        self.V_0_rp = self.read_grid(self.grid.r_up, 0)
+        self.V_0_qp = self.read_grid(self.grid.q_up, 0)
+        self.V_0_volu = self.read_grid(self.grid.vol_up, 0)
+        self.V_0_vold = self.read_grid(self.grid.vol_down, 0)
+        self.V_dt_volu = self.read_grid(self.grid.vol_up, 1)
+        self.h_spot = self.grid.spot_bump_size
+        self.h_vol = self.grid.volatility_bump_size
+        self.h_r = self.grid.r_bump_size
+        self.h_q = self.grid.q_bump_size
+        self.approximator = GridPricingApproximator(
+            self.grid, 
+            self.S, 
+            self.interpolation_method)
+    
+    def read_grid(self, grid:np.array, pos: int) -> np.array: 
+        try: return grid[:,pos]
+        except TypeError: return np.repeat(np.nan, len(self.spot_vector))
+    
+    def method(self) -> None: 
+        return None
+
+    def price(self) -> float: 
+        return self.approximator.option_price(self.S, self.V_0) 
+    
+    def delta(self) -> float:
+        return self.approximator.delta(
+            S=self.S, vector = self.V_0, 
+            h = self.h_spot)
+    
+    def vega(self) -> float:
+        return self.approximator.vega(
+            S=self.S,uvec=self.V_0_volu,
+            dvec=self.V_0, h=self.h_vol)
+    
+    def rho(self) -> float:
+        return self.approximator.rho(
+            S=self.S,uvec=self.V_0_rp,
+            dvec=self.V_0, h=self.h_r)
+    
+    def epsilon(self) -> float:
+        return self.approximator.epsilon(
+            S=self.S,uvec=self.V_0_qp,
+            dvec=self.V_0, h=self.h_q)
+    
+    def theta(self) -> float:
+        return self.approximator.theta(
+            S=self.S,uvec=self.V_dt,
+            dvec=self.V_0, h=self.dt)
+    
+    def gamma(self) -> float:
+        return self.approximator.gamma(
+            S=self.S, vector = self.V_0, 
+            h = self.h_spot)
+    
+    def vanna(self) -> float:
+        return self.approximator.vanna(
+            S = self.S, uvec = self.V_0_volu, dvec = self.V_0, 
+            h_S = self.h_spot, h_vol=self.h_vol)
+    
+    def volga(self) -> float:
+        return self.approximator.volga(
+            S=self.S, uvec=self.V_0_volu, vec=self.V_0, 
+            dvec=self.V_0_vold, h=self.h_vol)
+    
+    def charm(self) -> float:
+        return self.approximator.charm(
+            S=self.S, uvec=self.V_dt,
+            dvec=self.V_0, h_S=self.h_spot, 
+            dt=self.dt)
+    
+    def veta(self) -> float:
+        return self.approximator.veta(
+            S=self.S, uvec_dt=self.V_dt_volu, 
+            dvec_dt=self.V_dt, 
+            uvec=self.V_0_volu, dvec=self.V_0, 
+            h_vol=self.h_vol, dt=self.dt)
+    
+    def speed(self) -> float:
+        return self.approximator.speed(
+            S=self.S, vector = self.V_0, 
+            h = self.h_spot)
+    
+    def color(self) -> float:
+        return self.approximator.color(
+            S=self.S, uvec=self.V_dt, dvec=self.V_0, 
+            h_S=self.h_spot, dt=self.dt)
+    
+    def zomma(self) -> float:
+        return self.approximator.zomma(
+            S=self.S, uvec=self.V_0_volu, 
+            dvec=self.V_0, h_S=self.h_spot, 
+            h_vol=self.h_vol)
+    
+    def ultima(self) -> float:
+        return self.approximator.ultima()
+    
+    def vera(self) -> float:
+        return self.approximator.vera()
+
+@dataclass
+class RecursiveGridGenerator: 
+    
+    final_prices : np.array 
+    transition_matrixes : List[PDETransitionMatrix]
+    payoff_object : PayOffObject
+    option_steps : OptionSteps
+    check_path_cond : bool = True
+    
+    def __post_init__(self): 
+        self.N = len(self.transition_matrixes)
+        self.M = len(self.payoff_object.S)
+        self.barrier_observation = self.payoff_object.payoff.barrier_obervation
+        self.exercise_type = self.payoff_object.payoff.exercise
+    
+    def early_exercise_condition(self, prices : np.array, n:int) -> np.array: 
+        payoff = self.payoff_object.payoff_vector()
+        match self.exercise_type:
+            case ExerciseType.european: 
+                return prices
+            case ExerciseType.american:
+                return np.maximum(payoff, prices)
+            case ExerciseType.bermudan: 
+                if n in self.option_steps.bermudan: 
+                    return np.maximum(payoff, prices)
+                else: return prices
+            case _: 
+                return np.repeat(np.nan, self.M)
+
+    def touch_barrier_condition(self, prices: np.array, n:int) -> np.array: 
+        condition = self.payoff_object.barrier_condition()
+        match self.barrier_observation: 
+            case ObservationType.continuous: 
+                return condition*prices
+            case ObservationType.discrete: 
+                if n in self.option_steps.barrier_discrete: 
+                    return condition*prices
+                else: return prices
+            case ObservationType.window:
+                end = self.option_steps.barrier_window_end
+                begin = self.option_steps.barrier_window_begin
+                if n >= begin and n <= end: 
+                    return condition*prices
+                else: return prices
+            case _: return prices
+
+    def check_path_condition(self, prices : np.array, n:int) -> np.array: 
+        if self.check_path_cond: 
+            pp = self.touch_barrier_condition(prices, n)
+            pp = self.early_exercise_condition(pp, n)
+            return pp
+        else: return prices
+    
+    def generate_recursive_grids(self) -> np.array: 
+        grid_shape = (self.M, self.N)
+        grid = np.zeros(grid_shape)
+        grid[:, self.N-1] = self.final_prices
+        price_vec = self.final_prices
+        for i in range(self.N-1, -1, -1):
+            tmatobj =  self.transition_matrixes[i]
+            step = tmatobj.step
+            tmat = tmatobj.transition_matrix
+            price_vec = tmat.dot(price_vec) 
+            price_vec = self.check_path_condition(price_vec,step)
+            grid[:, i] = price_vec
+        return grid 
+
+@dataclass
+class OptionRecursiveGrid: 
+    option: Option
+    S : float
+    dx : float
+    M : int 
+    transition_matrixes : List[PDETransitionMatrix]
+
+    def __post_init__(self): 
+        self.spec = self.option.specification
+        self.N = len(self.transition_matrixes)
+        self.option_steps = self.spec.get_steps(self.N)
+        self.dt = self.spec.tenor.expiry/self.N
+    
+    def grid_fallback(self): 
+        M, N = self.M, self.N
+        return np.reshape(np.repeat(np.nan, M*N), (M,N)) 
+    
+    @staticmethod
+    def generate_spot_vector(dx: float, S: float, M : int) -> np.array: 
+        spotvec = np.empty(M)
+        spotvec[0] = S*np.exp((-dx*M/2))
+        for i in range(1,M): 
+            spotvec[i] = spotvec[i-1]*np.exp(dx)
+        return spotvec
+    
+    def get_recursive_grid_from_payoff(self, payoff: OptionPayoff, 
+                                       S:float, tmat:List[PDETransitionMatrix], 
+                                       spec: OptionSpecification)\
+                                          -> np.array:
+        spot_vector = self.generate_spot_vector(self.dx,S,self.M)
+        option_payoff = PayOffObject(spec,payoff,spot_vector)
+        grid_gen = RecursiveGridGenerator(
+            final_prices=option_payoff.payoff_vector(),
+            transition_matrixes=tmat, 
+            payoff_object=option_payoff, 
+            check_path_cond = True, 
+            option_steps=self.option_steps)
+        return grid_gen.generate_recursive_grids()
+    
+    def vanilla_grid(self, S:float,tmat:List[PDETransitionMatrix], 
+                     spec:OptionSpecification) -> np.array:
+        option_payoff = self.option.payoff
+        payoff = OptionPayoff(
+            exercise=option_payoff.exercise, 
+            binary=option_payoff.binary, 
+            option_type=option_payoff.option_type, 
+            gap =option_payoff.gap)
+        return self.get_recursive_grid_from_payoff(payoff=payoff,S=S,
+                                                   tmat=tmat, spec=spec)
+    
+    def barrier_out_grid(self, S:float,tmat:List[PDETransitionMatrix], 
+                         barrier:BarrierType, 
+                         spec:OptionSpecification) -> np.array: 
+        option_payoff = self.option.payoff
+        payoff = OptionPayoff(
+            exercise=option_payoff.exercise, 
+            binary=option_payoff.binary, 
+            option_type=option_payoff.option_type, 
+            gap =option_payoff.gap, 
+            barrier_obervation=option_payoff.barrier_obervation, 
+            barrier_type=barrier)
+        return self.get_recursive_grid_from_payoff(payoff=payoff,S=S,
+                                                   tmat=tmat, spec=spec) 
+
+    def barrier_in_grid(self, S:float,tmat:List[PDETransitionMatrix], 
+                        spec:OptionSpecification) -> np.array:
+        barrier = self.option.payoff.get_opposite_barrier()
+        vanilla = self.vanilla_grid(S=S, tmat=tmat, spec=spec)
+        barrier_out = self.barrier_out_grid(S=S, tmat=tmat, 
+                                            barrier = barrier, spec=spec)
+        return vanilla - barrier_out
+
+    def lookback_grid(self, S:float,tmat:List[PDETransitionMatrix]) -> np.array: 
+        return self.grid_fallback()
+    
+    def option_grid(self, S: float,tmat:List[PDETransitionMatrix],
+                    spec:OptionSpecification) -> np.array:
+        return self.get_recursive_grid_from_payoff(
+            payoff=self.option.payoff,
+            S=S,tmat=tmat, spec=spec) 
+
+    def main_grid(self, S:float,tmat:List[PDETransitionMatrix], 
+                  spec:OptionSpecification) -> np.array: 
+        option_payoff = self.option.payoff
+        payoff_type = [option_payoff.is_barrier(),
+                       option_payoff.is_lookback()]
+        match payoff_type: 
+            case [False, False]: 
+                return self.option_grid(S=S, tmat=tmat, spec=spec) 
+            case [True, False] : 
+                if option_payoff.is_in_barrier(): 
+                    return self.barrier_in_grid(S=S, tmat=tmat,spec=spec)  
+                else: 
+                    return self.option_grid(S=S, tmat=tmat, spec=spec) 
+            case [True, True]: return self.grid_fallback() 
+            case [False, True]: return self.grid_fallback() 
+            case _: return self.grid_fallback()
+    
+    def get_forward_start_price(self, S:float)\
+        -> dict[float, float]:
+        forward_step = self.option_steps.forward_start
+        tmat = [tm for tm in self.transition_matrixes if tm.step>forward_step]
+        spec = OptionSpecification(
+            strike=self.spec.strike*S, 
+            rebate = self.spec.rebate, 
+            tenor = self.spec.tenor,
+            barrier_down=self.spec.barrier_down*S, 
+            barrier_up=self.spec.barrier_up*S, 
+            gap_trigger=self.spec.gap_trigger*S, 
+            binary_amout=self.spec.binary_amount)
+        spot_vector = self.generate_spot_vector(self.dx, S, self.M)
+        payoff_object = PayOffObject(spec,self.option.payoff,spot_vector)
+        grid = self.get_recursive_grid_from_payoff(payoff= payoff_object, 
+            spec=spec, tmat=tmat, S=S)
+        gridobj = OptionPriceGrids(initial = grid, spot_vector=spot_vector)
+        pricingobj = PDEPricing(grid=gridobj, S=S)
+        return {S : pricingobj.price()}
+
+    def forward_start_grid(self) -> np.array: 
+        spot_list = list(self.generate_spot_vector(self.dx, self.S, self.M))
+        arg_list = [(s,) for s in spot_list]
+        forward_start_price = QuantTool.send_tasks_with_threading(
+            self.get_forward_start_price, 
+            arg_list)
+        data = dict()
+        data = {k: data[k] for k in list(forward_start_price.keys())}
+        prices = [data[k] for k in spot_list]
+        forward_step = self.option_steps.forward_start
+        tmat = [tm for tm in self.transition_matrixes if tm.step<=forward_step]
+        grid_gen = RecursiveGridGenerator(
+            final_prices=prices,
+            transition_matrixes=tmat, 
+            payoff_object=self.option.payoff_object(), 
+            check_path_cond = False, 
+            option_steps=self.option_steps)
+        return grid_gen.generate_recursive_grids()
+
+    def generate_grid(self) -> np.array: 
+        if self.option.payoff.forward_start: return self.forward_start_grid()
+        else: return self.main_grid(self.S, self.transition_matrixes, self.spec)
+
+
+
 
 

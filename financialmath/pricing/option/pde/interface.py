@@ -5,10 +5,10 @@ from financialmath.instruments.option import Option
 from financialmath.pricing.option.schema import ImpliedOptionMarketData, OptionValuationResult
 from financialmath.pricing.option.pde.framework.scheme import (OneFactorScheme, OneFactorSchemeList)
 from financialmath.pricing.option.pde.framework.grid import (OptionRecursiveGrid, 
-OptionPriceGrids, PricingGrid)
+OptionPriceGrids, PDEPricing)
 from financialmath.marketdata.schema import (OptionVolatilityPoint, 
 VolatilityType, OptionVolatilitySurface, MoneynessType)
-from financialmath.pricing.option.pde.framework.grid2 import (Option)
+from financialmath.quanttool import QuantTool
 
 @dataclass
 class PDEBlackScholesPricerObject: 
@@ -17,6 +17,7 @@ class PDEBlackScholesPricerObject:
     marketdata : ImpliedOptionMarketData
     M : int = 100
     N : int = 400
+    use_thread : bool = True
     numerical_scheme : OneFactorScheme = OneFactorSchemeList.implicit
     sensitivities : bool = True
     vol_bump_size: float = 0.01 
@@ -27,10 +28,15 @@ class PDEBlackScholesPricerObject:
     method_name = "PDE solver of Black Scholes equation"
 
     def __post_init__(self): 
+        self.S = self.marketdata.S
+        self.sigma = self.marketdata.sigma
+        self.t = self.option.specification.tenor.expiry
+        self.r = self.marketdata.r
+        self.q = self.marketdata.q
         self.scheme = OneFactorScheme.get_scheme(scheme=self.numerical_scheme)
         self.dt = self.time_step()
         self.dx = self.spot_logstep()
-
+        
     @staticmethod
     def generate_spot_vector(dx: float, S: float, M : int) -> np.array: 
         spotvec = np.empty(M)
@@ -39,7 +45,7 @@ class PDEBlackScholesPricerObject:
             spotvec[i] = spotvec[i-1]*np.exp(dx)
         return spotvec
 
-    def get_method(self) -> str: 
+    def get_pde_method(self) -> str: 
         return self.method_name + ' w/ ' + self.numerical_scheme.value
 
     def get_volsurface_object(self, sigma:float) -> OptionVolatilitySurface: 
@@ -56,15 +62,14 @@ class PDEBlackScholesPricerObject:
         return OptionVolatilitySurface(points = volatility_points)
     
     def time_step(self) -> float: 
-        t = self.option.specification.tenor.expiry
-        return t/self.N
+        return self.t/self.N
 
     def spot_logstep(self) -> float: 
-        sigma = self.marketdata.sigma 
-        return sigma * np.sqrt(2*self.dt)
+        return self.sigma * np.sqrt(2*self.dt)
 
-    def generate_recursive_grid(self, sigma:float, r:float, q:float) -> np.array: 
-        scheme = self.numerical_scheme
+    def get_recursive_grid(self, sigma:float, r:float, q:float,
+                           name : str) -> np.array:
+        scheme = self.scheme
         volsurface = self.get_volsurface_object(sigma=sigma)
         dt = self.dt
         dx = self.dx
@@ -78,64 +83,50 @@ class PDEBlackScholesPricerObject:
                         S = self.marketdata.S, 
                         dx = self.dx, 
                         M = self.M)
-        return recursive_grid.generate_classic_option_grid()
-
-    def generate_grids(self) -> OptionPriceGrids: 
-        sigma = self.marketdata.sigma 
-        r = self.marketdata.r
-        q = self.marketdata.q
-        initial = self.generate_recursive_grid(sigma=sigma, r=r, q=q)
-        grids = OptionPriceGrids(initial=initial, volatility_bump_size=self.vol_bump_size, 
-                                q_bump_size=self.q_bump_size, r_bump_size= self.r_bump_size, 
-                                spot_bump_size=self.spot_bump_size) 
+        return {name: recursive_grid.generate_grid()}
+    
+    def generate_grid(self, arg_list:List[tuple], result:dict) -> dict: 
+        if self.use_thread:
+            data = QuantTool.send_tasks_with_threading(
+                    self.get_recursive_grid, 
+                    arg_list)
+            [result.update(d[0]) for d in data]
+        else: 
+            data = []
+            for a in arg_list: 
+                data.append(self.get_recursive_grid(a[0], a[1], a[2], a[3])) 
+            [result.update(d) for d in data]
+        return result
+            
+    def generate_grid_object(self) -> OptionPriceGrids:
+        sigma, r, q = self.sigma, self.r, self.q
+        bump_vol, bump_r, bump_q = self.vol_bump_size, self.r_bump_size,\
+                                    self.q_bump_size
+        arg_list = [(sigma, r, q, 'no_bump',)]
+        other_arg = [(sigma + bump_vol, r, q, 'vol_up_bump',), 
+                     (sigma - bump_vol, r, q, 'vol_down_bump',), 
+                     (sigma, r + bump_r, q, 'r_up_bump',), 
+                     (sigma, r, q+bump_q, 'q_up_bump',)]
         if self.sensitivities: 
-            vol_h = self.vol_bump_size
-            vol_r = self.r_bump_size
-            vol_q = self.q_bump_size
-            grids.vol_up =  self.generate_recursive_grid(sigma=sigma+vol_h, r=r, q=q)
-            grids.vol_down =  self.generate_recursive_grid(sigma=sigma-vol_h, r=r, q=q)
-            grids.r_up =  self.generate_recursive_grid(sigma=sigma, r=r+vol_r, q=q)
-            grids.q_up =  self.generate_recursive_grid(sigma=sigma, r=r, q=q+vol_q)
-        return grids
-
-    def pricing(self) -> OptionValuationResult: 
-        valuation = PricingGrid(S = self.marketdata.S, dx = self.dx, M=self.M,
-                                dt = self.dt, grid = self.generate_grids())
-        
+            arg_list = arg_list+other_arg
+            result = {}
+        else: 
+            result = {'vol_up_bump' : None,'vol_down_bump':None, 
+                    'r_up_bump':None, 'q_up_bump':None}
+        result = self.generate_grid(arg_list,result)
+        spot_vector = self.generate_spot_vector(dx=self.dx,S=self.S,M=self.M)
+        return OptionPriceGrids(
+            initial=result['no_bump'], vol_up=result['vol_up_bump'], 
+            vol_down=result['vol_down_bump'], r_up=result['r_up_bump'], 
+            q_up=result['q_up_bump'], spot_bump_size=self.spot_bump_size, 
+            volatility_bump_size=bump_vol, r_bump_size=bump_r, 
+            q_bump_size=bump_q, spot_vector=spot_vector, dt = self.dt)
+    
+    def valuation(self) -> OptionValuationResult: 
+        valuation = PDEPricing(grid = self.generate_grid_object(), 
+                               S=self.S)
         return OptionValuationResult(instrument=self.option, 
                                     marketdata=self.marketdata, 
                                     price=valuation.price(), 
-                                    sensitivities=valuation.greeks(), 
-                                    method=self.get_method())
-
-@dataclass
-class PDEBlackScholesPricer:
-
-    option: Option or List[Option] 
-    marketdata: ImpliedOptionMarketData or List[ImpliedOptionMarketData]
-    M: int = 100
-    N: int = 400
-    numerical_scheme: OneFactorSchemeList = OneFactorSchemeList.implicit
-    sensitivities: bool = True
-    vol_bump_size: float = 0.01 
-    spot_bump_size: float = 0.01 
-    r_bump_size: float = 0.01 
-    q_bump_size: float  = 0.01 
-
-    def __post_init__(self): 
-        if not isinstance(self.option, list):
-            self.marketdata = [self.marketdata]
-            self.option = [self.option]
-    
-    def main(self) -> OptionValuationResult or List[OptionValuationResult] : 
-        output = [PDEBlackScholesObject(
-            option=o, marketdata=m, M =self.M, 
-            N = self.N, numerical_scheme=self.numerical_scheme,
-            sensitivities=self.sensitivities).pricing()
-                for o,m in zip(self.option, self.marketdata)]
-        if len(output)==1: return output[0]
-        else: return output
-
-
-
-
+                                    sensitivities=valuation.get_greeks(n=1), 
+                                    method=self.get_pde_method())

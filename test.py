@@ -1,21 +1,21 @@
 import numpy as np 
 from financialmath.pricing.option.schema import ImpliedOptionMarketData
-from financialmath.pricing.option.pde.interface2 import PDEBlackScholesPricerObject
+from financialmath.pricing.option.pde.interface import PDEBlackScholesPricerObject
 from financialmath.instruments.option import *
-
+import matplotlib.pyplot as plt
 
 S = 100 
-K = 120 
-r = 0.01 
-q = 0.02 
-sigma = 0.2 
-t = 1
-M = 200 
-N = 400 
+K = 100 
+r = 0.001
+q = 0.11
+sigma = 0.16
+t = 0.1
+M = 100 
+N = 300 
 dt = 1/N 
 dx = sigma * np.sqrt(2*dt)
-Bu = 105
-Bd = 105
+Bu = 99.9
+Bd = 99.9
 
 mda = ImpliedOptionMarketData(S=S,r=r,q=q,sigma=sigma,F=np.nan)
 
@@ -26,16 +26,29 @@ opt_spec = OptionSpecification(
     barrier_down=Bd)
 
 opt_payoff = OptionPayoff(
-    option_type=OptionalityType.put,
+    option_type=OptionalityType.call,
     exercise=ExerciseType.european,
-    barrier_obervation=ObservationType.in_fine, 
-    barrier_type=BarrierType.up_and_out
+    barrier_type=BarrierType.down_and_in, 
+    barrier_obervation=ObservationType.continuous
 )
+
 opt = Option(opt_spec,opt_payoff)
 
-S_vector = np.linspace(0,200,200)
-opt.payoff_object(S_vector).barrier_condition()
-test = PDEBlackScholesPricerObject(opt,mda,sensitivities=False, use_thread=False)
-test2 = test.valuation()
-test2.price
+test = PDEBlackScholesPricerObject(
+    opt,
+    mda,
+    sensitivities=True, 
+    use_thread=True, 
+    N=N, 
+    M=M)
+valuation = test.valuation()
+valuation.price
+gridobj = test.generate_grid_object()
+
+
+
+valuation.sensitivities
+
+
+
 

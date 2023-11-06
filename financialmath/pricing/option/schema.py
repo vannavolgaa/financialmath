@@ -58,9 +58,9 @@ class OptionValuationFunction(ABC):
     def get_greeks(self, n:int) -> List[OptionGreeks]: 
         try:
             greeks = [self.delta(), self.vega(), self.gamma(), self.rho(), 
-                  self.epsilon(), self.theta(), self.vanna(), self.volga(), 
-                  self.speed(), self.charm(), self.veta(), self.vera(), 
-                  self.zomma(), self.ultima(), self.color()]
+                    self.epsilon(), self.theta(), self.vanna(), self.volga(), 
+                    self.speed(), self.charm(), self.veta(), self.vera(), 
+                    self.zomma(), self.ultima(), self.color()]
             data = {n:QuantTool.convert_array_to_list(d) 
                         for n,d in zip(self.greek_name, greeks)}
             data = QuantTool.dictlist_to_listdict(data)
