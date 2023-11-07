@@ -3,7 +3,7 @@ from abc import abstractmethod, ABC
 from financialmath.instruments.futures import Future
 import math
 from typing import List
-from financialmath.quanttool import QuantTool
+from financialmath.tools.tool import MainTool
 
 @dataclass
 class FutureInputData: 
@@ -36,14 +36,14 @@ class FutureValuationFunction(ABC):
             name = ['delta', 'theta', 'rho']
             sensi = [self.delta(), self.theta(), 
                     self.rho()]
-            data = {n:QuantTool.convert_array_to_list(d) 
+            data = {n:MainTool.convert_array_to_list(d) 
                         for n,d in zip(name, sensi)}
-            data = QuantTool.dictlist_to_listdict(data)
+            data = MainTool.dictlist_to_listdict(data)
             return [FutureSensibility(**d) for d in data]
         except Exception as e: return [FutureSensibility()*n]
     
     def get_price(self,n:int) -> List[float]: 
-        try: return QuantTool.convert_array_to_list(self.price())
+        try: return MainTool.convert_array_to_list(self.price())
         except Exception as e: return [math.nan]*n
     
     def get_method(self, n:int) -> List[str]: 

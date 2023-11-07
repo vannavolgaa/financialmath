@@ -2,7 +2,8 @@ import numpy as np
 from scipy.stats import norm
 from typing import List
 from financialmath.pricing.option.schema import OptionValuationFunction
-from financialmath.quanttool import QuantTool
+from financialmath.tools.tool import MainTool
+from financialmath.tools.probability import NormalDistribution
 from dataclasses import dataclass
 
 @dataclass 
@@ -18,22 +19,24 @@ class BlackScholesInputData:
 class BlackScholesEuropeanVanillaCall(OptionValuationFunction): 
 
     def __init__(self, inputdata:BlackScholesInputData):
-        self.S = QuantTool.convert_to_numpy_array(x=inputdata.S)
-        self.K = QuantTool.convert_to_numpy_array(x=inputdata.K)
-        self.q = QuantTool.convert_to_numpy_array(x=inputdata.q)
-        self.r = QuantTool.convert_to_numpy_array(x=inputdata.r)
-        self.t = QuantTool.convert_to_numpy_array(x=inputdata.t)
-        self.sigma = QuantTool.convert_to_numpy_array(x=inputdata.sigma)
-        self.d1 = QuantTool.compute_blackscholes_d1(S = self.S,K = self.K,
+        self.S = MainTool.convert_to_numpy_array(x=inputdata.S)
+        self.K = MainTool.convert_to_numpy_array(x=inputdata.K)
+        self.q = MainTool.convert_to_numpy_array(x=inputdata.q)
+        self.r = MainTool.convert_to_numpy_array(x=inputdata.r)
+        self.t = MainTool.convert_to_numpy_array(x=inputdata.t)
+        self.sigma = MainTool.convert_to_numpy_array(x=inputdata.sigma)
+        self.d1 = MainTool.compute_blackscholes_d1(S = self.S,K = self.K,
                                                     r = self.r,q = self.q,
                                                     t = self.t, sigma = self.sigma)
-        self.d2 = QuantTool.compute_blackscholes_d2(S = self.S,K = self.K,
+        self.d2 = MainTool.compute_blackscholes_d2(S = self.S,K = self.K,
                                                     r = self.r,q = self.q,
                                                     t = self.t, sigma = self.sigma)
-        self.Nd1 = norm.cdf(self.d1)
-        self.Nd2 = norm.cdf(self.d2)
-        self.nd1 = norm.pdf(self.d1)
-        self.nd2 = norm.pdf(self.d2)
+
+        self.Nd1 = NormalDistribution().cdf(self.d1)
+        self.Nd2 = NormalDistribution().cdf(self.d2)
+        self.nd1 = NormalDistribution().pdf(self.d1)
+        self.nd2 = NormalDistribution().pdf(self.d2)
+
 
     def get_max_length_param(self) -> int: 
         lparam = [len(x) for x in [self.S, self.K, self.q, 
@@ -169,22 +172,22 @@ class BlackScholesEuropeanVanillaCall(OptionValuationFunction):
 class BlackScholesEuropeanVanillaPut(OptionValuationFunction): 
 
     def __init__(self, inputdata:BlackScholesInputData):
-        self.S = QuantTool.convert_to_numpy_array(x=inputdata.S)
-        self.K = QuantTool.convert_to_numpy_array(x=inputdata.K)
-        self.q = QuantTool.convert_to_numpy_array(x=inputdata.q)
-        self.r = QuantTool.convert_to_numpy_array(x=inputdata.r)
-        self.t = QuantTool.convert_to_numpy_array(x=inputdata.t)
-        self.sigma = QuantTool.convert_to_numpy_array(x=inputdata.sigma)
-        self.d1 = QuantTool.compute_blackscholes_d1(S = self.S,K = self.K,
+        self.S = MainTool.convert_to_numpy_array(x=inputdata.S)
+        self.K = MainTool.convert_to_numpy_array(x=inputdata.K)
+        self.q = MainTool.convert_to_numpy_array(x=inputdata.q)
+        self.r = MainTool.convert_to_numpy_array(x=inputdata.r)
+        self.t = MainTool.convert_to_numpy_array(x=inputdata.t)
+        self.sigma = MainTool.convert_to_numpy_array(x=inputdata.sigma)
+        self.d1 = MainTool.compute_blackscholes_d1(S = self.S,K = self.K,
                                                     r = self.r,q = self.q,
                                                     t = self.t, sigma = self.sigma)
-        self.d2 = QuantTool.compute_blackscholes_d2(S = self.S,K = self.K,
+        self.d2 = MainTool.compute_blackscholes_d2(S = self.S,K = self.K,
                                                     r = self.r,q = self.q,
                                                     t = self.t, sigma = self.sigma)
-        self.Nd1 = norm.cdf(-self.d1)
-        self.Nd2 = norm.cdf(-self.d2)
-        self.nd1 = norm.pdf(-self.d1)
-        self.nd2 = norm.pdf(-self.d2)
+        self.Nd1 = NormalDistribution().cdf(-self.d1)
+        self.Nd2 = NormalDistribution().cdf(-self.d2)
+        self.nd1 = NormalDistribution().pdf(-self.d1)
+        self.nd2 = NormalDistribution().pdf(-self.d2)
         self.eurocall = BlackScholesEuropeanVanillaCall(inputdata=inputdata)
 
     def get_max_length_param(self) -> int: 
@@ -281,11 +284,11 @@ class BlackScholesEuropeanVanillaPut(OptionValuationFunction):
 class BlackEuropeanVanillaCall(OptionValuationFunction): 
 
     def __init__(self, inputdata:BlackScholesInputData):
-        self.F = QuantTool.convert_to_numpy_array(x=inputdata.F)
-        self.K = QuantTool.convert_to_numpy_array(x=inputdata.K)
-        self.r = QuantTool.convert_to_numpy_array(x=inputdata.r)
-        self.t = QuantTool.convert_to_numpy_array(x=inputdata.t)
-        self.sigma = QuantTool.convert_to_numpy_array(x=inputdata.sigma)
+        self.F = MainTool.convert_to_numpy_array(x=inputdata.F)
+        self.K = MainTool.convert_to_numpy_array(x=inputdata.K)
+        self.r = MainTool.convert_to_numpy_array(x=inputdata.r)
+        self.t = MainTool.convert_to_numpy_array(x=inputdata.t)
+        self.sigma = MainTool.convert_to_numpy_array(x=inputdata.sigma)
         self.df = np.exp(-self.r*self.t) 
         inputdata_bs = BlackScholesInputData(
             S=self.F,r=0,q=0,t=self.t, sigma=self.sigma, K=self.K)
@@ -350,12 +353,11 @@ class BlackEuropeanVanillaCall(OptionValuationFunction):
 class BlackEuropeanVanillaPut(OptionValuationFunction): 
 
     def __init__(self, inputdata:BlackScholesInputData):
-        self.F = QuantTool.convert_to_numpy_array(x=inputdata.F)
-        self.K = QuantTool.convert_to_numpy_array(x=inputdata.K)
-        self.r = QuantTool.convert_to_numpy_array(x=inputdata.r)
-        self.t = QuantTool.convert_to_numpy_array(x=inputdata.t)
-        self.sigma = QuantTool.convert_to_numpy_array(x=inputdata.sigma)
-        lparam = [len(x) for x in [self.F, self.K, self.r, self.t, self.sigma]]
+        self.F = MainTool.convert_to_numpy_array(x=inputdata.F)
+        self.K = MainTool.convert_to_numpy_array(x=inputdata.K)
+        self.r = MainTool.convert_to_numpy_array(x=inputdata.r)
+        self.t = MainTool.convert_to_numpy_array(x=inputdata.t)
+        self.sigma = MainTool.convert_to_numpy_array(x=inputdata.sigma)
         self.df = np.exp(-self.r*self.t) 
         inputdata_bs = BlackScholesInputData(
             S=self.F,r=0,q=0,t=self.t, sigma=self.sigma, K=self.K)

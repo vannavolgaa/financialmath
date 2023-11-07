@@ -4,7 +4,7 @@ from typing import List
 from financialmath.instruments.option import * 
 from financialmath.pricing.option.schema import OptionValuationFunction
 from financialmath.pricing.option.pde.framework.scheme import PDETransitionMatrix
-from financialmath.quanttool import QuantTool
+from financialmath.tools.tool import MainTool
 
 @dataclass
 class OptionPriceGrids: 
@@ -428,7 +428,7 @@ class OptionRecursiveGrid:
     def forward_start_grid(self) -> np.array: 
         spot_list = list(self.generate_spot_vector(self.dx, self.S, self.M))
         arg_list = [(s,) for s in spot_list]
-        forward_start_price = QuantTool.send_tasks_with_threading(
+        forward_start_price = MainTool.send_tasks_with_threading(
             self.get_forward_start_price, 
             arg_list)
         data = dict()

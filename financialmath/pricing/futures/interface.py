@@ -5,8 +5,7 @@ from financialmath.pricing.futures.schema import (FutureInputData,
 FutureSensibility, FutureValuationResult, FutureValuationFunction)
 from financialmath.pricing.futures.pricing import (FuturePricing, InterestRateFuturePricing, 
 BondFuturePricing, FuturePremiumList)
-from financialmath.quanttool import QuantTool
-
+from financialmath.tools.tool import MainTool
 
 @dataclass
 class FutureValuationObject: 
@@ -17,8 +16,8 @@ class FutureValuationObject:
     sensitivities : bool = True 
 
     def __post_init__(self): 
-        self.instruments = QuantTool.convert_any_to_list(self.instruments)
-        self.inputdata = QuantTool.convert_any_to_list(self.inputdata)
+        self.instruments = MainTool.convert_any_to_list(self.instruments)
+        self.inputdata = MainTool.convert_any_to_list(self.inputdata)
         self.n = len(self.instruments)
         self.valuation = self.valuation_object()
     

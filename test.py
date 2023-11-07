@@ -1,54 +1,12 @@
-import numpy as np 
-from financialmath.pricing.option.schema import ImpliedOptionMarketData
-from financialmath.pricing.option.pde.interface import PDEBlackScholesPricerObject
-from financialmath.instruments.option import *
+from financialmath.tools.probability import ProbabilityDistribution
+import numpy as np
 import matplotlib.pyplot as plt
 
-S = 100 
-K = 100 
-r = 0.001
-q = 0.11
-sigma = 0.16
-t = 0.1
-M = 100 
-N = 300 
-dt = 1/N 
-dx = sigma * np.sqrt(2*dt)
-Bu = 99.9
-Bd = 99.9
+N=1000
+M=2
+corr_matrix = np.reshape([1,0.5,0.5,1],(M,M))
+mat = ProbabilityDistribution.skewed_student_t({'df':15, 'tau':4}).correlated_random_matrix(corr_matrix=corr_matrix, N=N, M=M)
 
-mda = ImpliedOptionMarketData(S=S,r=r,q=q,sigma=sigma,F=np.nan)
-
-opt_spec = OptionSpecification(
-    strike=K, 
-    tenor=OptionTenor(expiry=t), 
-    barrier_up=Bu, 
-    barrier_down=Bd)
-
-opt_payoff = OptionPayoff(
-    option_type=OptionalityType.call,
-    exercise=ExerciseType.european,
-    barrier_type=BarrierType.down_and_in, 
-    barrier_obervation=ObservationType.continuous
-)
-
-opt = Option(opt_spec,opt_payoff)
-
-test = PDEBlackScholesPricerObject(
-    opt,
-    mda,
-    sensitivities=True, 
-    use_thread=True, 
-    N=N, 
-    M=M)
-valuation = test.valuation()
-valuation.price
-gridobj = test.generate_grid_object()
-
-
-
-valuation.sensitivities
-
-
-
-
+plt.plot(np.cumsum(mat[0,:]))
+plt.plot(np.cumsum(mat[1,:]))
+plt.show()

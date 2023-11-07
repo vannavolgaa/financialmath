@@ -8,7 +8,7 @@ from financialmath.pricing.option.pde.framework.grid import (OptionRecursiveGrid
 OptionPriceGrids, PDEPricing)
 from financialmath.marketdata.schema import (OptionVolatilityPoint, 
 VolatilityType, OptionVolatilitySurface, MoneynessType)
-from financialmath.quanttool import QuantTool
+from financialmath.tools.tool import MainTool
 
 @dataclass
 class PDEBlackScholesPricerObject: 
@@ -87,7 +87,7 @@ class PDEBlackScholesPricerObject:
     
     def generate_grid(self, arg_list:List[tuple], result:dict) -> dict: 
         if self.use_thread:
-            data = QuantTool.send_tasks_with_threading(
+            data = MainTool.send_tasks_with_threading(
                     self.get_recursive_grid, 
                     arg_list)
             [result.update(d[0]) for d in data]

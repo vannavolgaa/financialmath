@@ -3,7 +3,7 @@ from abc import abstractmethod, ABC
 from enum import Enum 
 import numpy as np
 from typing import List
-from financialmath.quanttool import QuantTool
+from financialmath.tools.tool import MainTool
 from financialmath.instruments.option import Option
 
 @dataclass
@@ -48,7 +48,7 @@ class OptionValuationFunction(ABC):
                   'zomma', 'ultima', 'color']
 
     def get_price(self,n:int) -> List[float]: 
-        try: return QuantTool.convert_array_to_list(self.price())
+        try: return MainTool.convert_array_to_list(self.price())
         except Exception as e: return [np.nan]*n
     
     def get_method(self, n:int) -> List[str]: 
@@ -61,9 +61,9 @@ class OptionValuationFunction(ABC):
                     self.epsilon(), self.theta(), self.vanna(), self.volga(), 
                     self.speed(), self.charm(), self.veta(), self.vera(), 
                     self.zomma(), self.ultima(), self.color()]
-            data = {n:QuantTool.convert_array_to_list(d) 
+            data = {n:MainTool.convert_array_to_list(d) 
                         for n,d in zip(self.greek_name, greeks)}
-            data = QuantTool.dictlist_to_listdict(data)
+            data = MainTool.dictlist_to_listdict(data)
             return [OptionGreeks(**d) for d in data]
         except Exception as e: return [OptionGreeks()]*n
         
