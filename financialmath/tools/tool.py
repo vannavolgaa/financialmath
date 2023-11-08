@@ -124,6 +124,15 @@ class MainTool:
         if not isinstance(x, list): return [x]
         else: return x
 
+    @staticmethod
+    def order_join_lists(keys:List, values:List, 
+                                by_key:bool = True, reverse = False): 
+        data = dict(zip(keys,values))
+        if by_key: return dict(sorted(data.items(), reverse=reverse))
+        else: return sorted(data.items(), key=lambda x: x[1], reverse=reverse)   
+
+
+
     
 
 
