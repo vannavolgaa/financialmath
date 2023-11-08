@@ -10,3 +10,4 @@ mat = ProbabilityDistribution.skewed_student_t({'df':15, 'tau':4}).correlated_ra
 plt.plot(np.cumsum(mat[0,:]))
 plt.plot(np.cumsum(mat[1,:]))
 plt.show()
+
