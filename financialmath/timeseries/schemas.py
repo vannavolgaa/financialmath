@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from typing import List
 from enum import Enum
-import math
+import numpy as np
 from datetime import datetime
-from financialmath.tools.date import (ProcessDate, TimeIntervalDefinition, 
+from financialmath.tools.date import (DateTool, TimeIntervalDefinition, 
 TimestampType)
 from financialmath.tools.tool import MainTool
 
@@ -33,14 +33,14 @@ class ProcessTimeSerie:
     def __post_init__(self): 
         self.n = len(self.dates)
         dates = self.process_dates()
-        order_dict = MainTool.order_join_lists(keys=dates, values=values)
+        order_dict = MainTool.order_join_lists(keys=dates, values=self.values)
         self.dates, self.values = list(order_dict.keys()), list(order_dict.values())
         self.log_diff = self.compute_log_return()
         self.absolute_diff = self.compute_simple_difference(self.values)
         self.relative_diff = self.compute_simple_return(self.values)
 
     def process_dates(self) -> List[datetime]: 
-        return [ProcessDate(date=d, date_format=self.date_format).processed_date 
+        return [DateTool.process_date_to_datetime(d,self.date_format)
                 for d in self.dates]
 
     def compute_log_return(self) -> np.array: 
