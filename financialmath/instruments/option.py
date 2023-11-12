@@ -244,5 +244,15 @@ class Option:
 
     def payoff_object(self, S: np.array): 
         return PayOffObject(self.specification, self.payoff, S)
+    
+@dataclass
+class MarketOptionQuotes: 
+    bid : float 
+    ask : float 
+    option : Option 
+
+    def __post_init__(self): 
+        self.mid = (self.bid+self.ask)/2
+
 
 

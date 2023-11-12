@@ -3,7 +3,7 @@ from typing import List
 from enum import Enum
 import numpy as np
 from datetime import datetime
-from financialmath.tools.date import (DateTool, TimeIntervalDefinition, 
+from financialmath.tools.date import (DateTool, TimeIntervalMilliseconds, 
 TimestampType)
 from financialmath.tools.tool import MainTool
 
@@ -18,16 +18,21 @@ class DataPoint:
 @dataclass
 class TimeSerieObject: 
     data : List[DataPoint]
-    interval : TimeIntervalDefinition
+    interval : TimeIntervalMilliseconds
 
     def __post_init__(self): 
-        pass
+        self.times = [d.time for d in self.data]
+        self.values = [d.values for d in self.data]
+        self.log_differences = [d.log_difference for d in self.data]
+        self.absolute_differences = [d.absolute_difference for d in self.data]
+        self.relative_differences = [d.relative_difference for d in self.data]
+
 
 @dataclass
 class ProcessTimeSerie: 
     dates : List[str or int]
     values : List[float]
-    interval : TimeIntervalDefinition
+    interval : TimeIntervalMilliseconds
     date_format : str or TimestampType
 
     def __post_init__(self): 
@@ -36,8 +41,8 @@ class ProcessTimeSerie:
         order_dict = MainTool.order_join_lists(keys=dates, values=self.values)
         self.dates, self.values = list(order_dict.keys()), list(order_dict.values())
         self.log_diff = self.compute_log_return()
-        self.absolute_diff = self.compute_simple_difference(self.values)
-        self.relative_diff = self.compute_simple_return(self.values)
+        self.absolute_diff = self.compute_simple_difference()
+        self.relative_diff = self.compute_simple_return()
 
     def process_dates(self) -> List[datetime]: 
         return [DateTool.process_date_to_datetime(d,self.date_format)

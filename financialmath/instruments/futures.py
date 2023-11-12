@@ -19,4 +19,13 @@ class Future:
     future_type : FutureType
     settlement_type : SettlementType
 
+@dataclass
+class MarketFutureQuotes: 
+    bid : float 
+    ask : float 
+    future : Future
+
+    def __post_init__(self): 
+        self.mid = (self.bid+self.ask)/2
+
 

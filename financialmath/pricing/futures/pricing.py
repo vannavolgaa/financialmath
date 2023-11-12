@@ -5,7 +5,7 @@ from typing import List
 from financialmath.pricing.futures.schema import (
     FutureValuationFunction, FutureInputData)
 from financialmath.instruments.futures import Future, FutureType
-from financialmath.quanttool import QuantTool
+from financialmath.tools.tool import MainTool
 
 @dataclass
 class FuturePremium: 
@@ -54,9 +54,9 @@ class FuturePricing(FutureValuationFunction):
     continuous : bool 
 
     def __post_init__(self):
-        self.S = QuantTool.convert_to_numpy_array(x=self.S)
-        self.x = QuantTool.convert_to_numpy_array(x=self.x)
-        self.t = QuantTool.convert_to_numpy_array(x=self.t)
+        self.S = MainTool.convert_to_numpy_array(x=self.S)
+        self.x = MainTool.convert_to_numpy_array(x=self.x)
+        self.t = MainTool.convert_to_numpy_array(x=self.t)
     
     def method(self) -> str: 
         if self.continuous: return 'Future formula w/ continuous compounding'
@@ -83,7 +83,7 @@ class InterestRateFuturePricing(FutureValuationFunction):
     r : float or List[float]
 
     def __post_init__(self):
-        self.r = QuantTool.convert_to_numpy_array(x=self.S)
+        self.r = MainTool.convert_to_numpy_array(x=self.S)
         if not isinstance(self.r, float): self.n = len(self.r)
     
     def method(self) -> str: 

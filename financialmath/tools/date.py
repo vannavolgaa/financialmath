@@ -5,28 +5,32 @@ from typing import List
 import numpy as np
 import calendar
 
-class TimeIntervalDefinition(Enum): 
-    one_second = timedelta(seconds=1) 
-    thirty_second = timedelta(seconds=30)
-    one_minute = timedelta(minutes=1)
-    three_minutes = timedelta(minutes=3) 
-    five_minutes = timedelta(minutes=5) 
-    ten_minutes = timedelta(minutes=10) 
-    fifteen_minutes = timedelta(minutes=15) 
-    thirty_minutes = timedelta(minutes=30) 
-    one_hour = timedelta(hours=1) 
-    two_hours = timedelta(hours=2)  
-    three_hours = timedelta(hours=3)  
-    six_hours = timedelta(hours=6) 
-    twelve_hours = timedelta(hours=12)  
-    daily = timedelta(days=1)  
-    weekly = timedelta(weeks=1)  
-    monthly = timedelta(days=30)
-    quarterly = timedelta(days=90)
-    semi_annually = timedelta(days=180)
-    annually = timedelta(days=360)
+class TimeIntervalMilliseconds(Enum): 
 
-class TimestampType: 
+    _ignore_ = ['_year_base']
+    _year_base = 365
+    one_second = 1000
+    thirty_second = 30*one_second
+    one_minute = 60*one_second
+    three_minutes = 3*one_minute
+    five_minutes = 5*one_minute
+    ten_minutes = 10*one_minute
+    fifteen_minutes = 15*one_minute
+    thirty_minutes = 30*one_minute
+    one_hour = 60*one_minute
+    two_hours = 2*one_hour
+    three_hours = 3*one_hour
+    six_hours = 6*one_hour
+    twelve_hours = 12*one_hour
+    daily = 24*one_hour
+    weekly = 7*daily
+    annually = _year_base*daily
+    monthly = round(annually/12)
+    quarterly = round(annually/4)
+    semi_annually = round(annually/2)
+
+
+class TimestampType(Enum): 
     timestamp_in_mseconds = 1 
     timestamp_in_seconds = 2 
 

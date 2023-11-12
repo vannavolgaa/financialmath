@@ -2,6 +2,25 @@ from dataclasses import dataclass
 from typing import List
 import numpy as np
 from enum import Enum
+from financialmath.instruments.option import *
+
+
+class ImpliedDataTypes(Enum): 
+    interest_rate = 1
+    dividend_yield = 2 
+    implied_volatility = 3 
+    convenience_yield = 4
+    basis_spread = 5
+
+@dataclass
+class ImpliedDataQuotes: 
+    bid : float 
+    ask : float 
+    data_types : ImpliedDataTypes
+    market_quote : classmethod
+    
+    def __post_init__(self): 
+        self.mid = (self.bid + self.ask)/2
 
 class VolatilityType(Enum): 
     local = 1 
@@ -15,7 +34,6 @@ class MoneynessType(Enum):
     moneyness = 3 
     log_moneyness = 4 
     log_forward_moneyness = 5 
-
 
 @dataclass
 class TermPoint: 

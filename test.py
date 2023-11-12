@@ -1,13 +1,20 @@
-from financialmath.tools.probability import ProbabilityDistribution
-import numpy as np
-import matplotlib.pyplot as plt
-from datetime import timedelta, datetime
-from financialmath.tools.date import DayCountFactor, DayCountConvention
+from financialmath.marketdata.implied.future import *
+from financialmath.instruments.futures import (Future, MarketFutureQuotes, 
+                                               FutureType, SettlementType)
+from financialmath.instruments.spot import Spot, MarketSpotQuotes
+from financialmath.instruments.zcbond import ZCBond, MarketZCBondQuotes
 
-d1 = datetime.now()
-d2 = datetime(year=2022,month=11,day=9)
+spot = Spot()
+future = Future(1,FutureType.equity,SettlementType.cash)
+zcbond = ZCBond(expiry=1)
+future_quote= MarketFutureQuotes(115,125,future)
+spot_quote= MarketSpotQuotes(105,108,spot)
+bond_quote = MarketZCBondQuotes(85,89,zcbond)
 
-for i in list(DayCountConvention):
-    print(i.value)
-    print(DayCountFactor(d2,d1,i).get())
+ImpliedDividendEquityFutures(future_quote, bond_quote,spot_quote, False).main()
+ImpliedDividendEquityFutures(future_quote, bond_quote,spot_quote, True).main()
+
+
+
+
 
