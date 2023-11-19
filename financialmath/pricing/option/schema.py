@@ -40,7 +40,6 @@ class OptionValuationResult:
     sensitivities : OptionGreeks
     method : str
     
-
 class OptionValuationFunction(ABC): 
 
     greek_name = ['delta', 'vega', 'gamma', 'rho', 'epsilon', 'theta', 

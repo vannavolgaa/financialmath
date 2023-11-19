@@ -17,7 +17,6 @@ class SettlementType(Enum):
 class Future: 
     expiry: float 
     future_type : FutureType
-    settlement_type : SettlementType
 
 @dataclass
 class MarketFutureQuotes: 

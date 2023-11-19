@@ -2,22 +2,30 @@ from dataclasses import dataclass
 from typing import List
 import numpy as np
 from enum import Enum
-from financialmath.instruments.option import *
+from financialmath.instruments.option import MarketOptionQuotes
+from financialmath.instruments.futures import MarketFutureQuotes
+from financialmath.instruments.spot import MarketSpotQuotes
+from financialmath.instruments.zcbond import MarketZCBondQuotes
 
-
-class ImpliedDataTypes(Enum): 
-    interest_rate = 1
-    dividend_yield = 2 
-    implied_volatility = 3 
-    convenience_yield = 4
-    basis_spread = 5
+class ImpliedQuoteTypes(Enum): 
+    yields = 1
+    implied_volatility = 2 
 
 @dataclass
-class ImpliedDataQuotes: 
+class MarketQuotes: 
+    option : MarketOptionQuotes or List[MarketOptionQuotes] = None
+    spot : MarketSpotQuotes = None
+    domestic_zcbond : MarketZCBondQuotes = None
+    foreign_zcbond : MarketZCBondQuotes = None
+    future : MarketFutureQuotes = None
+
+@dataclass
+class ImpliedQuotes: 
     bid : float 
     ask : float 
-    data_types : ImpliedDataTypes
-    market_quote : classmethod
+    expiry : float
+    data_types : ImpliedQuoteTypes
+    market_quote : MarketQuotes
     
     def __post_init__(self): 
         self.mid = (self.bid + self.ask)/2
@@ -65,7 +73,8 @@ class OptionVolatilitySurface:
             data = {k : data[k] for k in sorted(data)}
             output = output + list(data.values())
         M = int(len(output)/N)
-        return np.reshape(output, (M,N))
+        try:return np.reshape(output, (M,N))
+        except Exception as e: return np.reshape(np.repeat(np.nan, M*N), (M,N))
 
 
 

@@ -76,7 +76,7 @@ class FuturePricing(FutureValuationFunction):
     def rho(self) -> np.array: 
         if self.continuous: return self.t*self.price()
         else: return self.S*self.t*((1+self.x)**(self.t-1))
-
+        
 @dataclass
 class InterestRateFuturePricing(FutureValuationFunction):
 

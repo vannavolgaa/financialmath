@@ -3,7 +3,8 @@ from enum import Enum
 import numpy as np
 from scipy.stats.qmc import Sobol, Halton
 import scipy.linalg 
-from financialmath.tools.probability import (ProbabilityDistributionAbstract, NormalDistribution)
+from financialmath.tools.probability import (ProbilityDistributionAbstract, 
+NormalDistribution, UniformDistribution)
 import scipy.stats 
 
 class RandomGeneratorType: 
@@ -16,7 +17,7 @@ class RandomGeneratorType:
 class RandomGenerator:
     mu : float = 0
     sigma : float = 1 
-    probability_distribution: ProbabilityDistributionAbstract = NormalDistribution()
+    probability_distribution: ProbilityDistributionAbstract = NormalDistribution()
     generator_type : RandomGeneratorType = RandomGeneratorType.standard
     
     def standard(self, N:int) -> np.array: 
@@ -24,10 +25,11 @@ class RandomGenerator:
             N= N, mu = self.mu, sigma=self.sigma)
 
     def antithetic(self, N:int) -> np.array:
-        Z = self.probability_distribution.random(
-            N=round(N/2), 
-            mu = self.mu, sigma=self.sigma)
-        return np.concatenate((Z,-Z))
+        u = UniformDistribution.random(N = round(N/2))
+        u = np.concatenate((u,1-u))
+        z = self.probability_distribution.inverse_cdf(
+            x = u, mu = self.mu, sigma=self.sigma)
+        return z
     
     def quasiMC_from_sobol(self,N:int) -> np.array:
         d = round(np.log(N)/np.log(2))

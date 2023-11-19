@@ -29,7 +29,6 @@ class TimeIntervalMilliseconds(Enum):
     quarterly = round(annually/4)
     semi_annually = round(annually/2)
 
-
 class TimestampType(Enum): 
     timestamp_in_mseconds = 1 
     timestamp_in_seconds = 2 

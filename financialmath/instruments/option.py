@@ -103,7 +103,6 @@ class OptionPayoff:
             case BarrierType.double_knock_out: return True
             case _: return False
 
-
 @dataclass
 class OptionTenor: 
     expiry : float 

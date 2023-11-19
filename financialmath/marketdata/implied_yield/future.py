@@ -6,10 +6,10 @@ from financialmath.instruments.spot import MarketSpotQuotes
 from financialmath.instruments.zcbond import MarketZCBondQuotes
 from financialmath.marketdata.schema import ImpliedDataQuotes, ImpliedDataTypes
 from financialmath.tools.tool import MainTool
-from financialmath.marketdata.implied.zcbond import ImpliedRatesZCBond
+from financialmath.marketdata.implied_yield.zcbond import ImpliedRatesZCBond
 
 @dataclass
-class ImpliedDividendEquityFutures: 
+class ImpliedYieldFutureOneZCBond: 
 
     future_quotes : MarketFutureQuotes or List[MarketFutureQuotes]
     zcbond_quotes : MarketZCBondQuotes or List[MarketZCBondQuotes]
@@ -46,7 +46,7 @@ class ImpliedDividendEquityFutures:
         return [ImpliedDataQuotes(b,a,data_type,[s,f,z]) for b,a,s,f,z in data]
 
 @dataclass
-class ImpliedBasisFXFutures: 
+class ImpliedYieldFutureTwoZCBond: 
 
     future_quotes : MarketFutureQuotes or List[MarketFutureQuotes]
     spot_quotes : MarketSpotQuotes or List[MarketSpotQuotes]
@@ -92,7 +92,7 @@ class ImpliedBasisFXFutures:
                 for b,a,s,f,zd, zf in data]
 
 @dataclass
-class ImpliedRatesCryptoFutures: 
+class ImpliedYieldFuture: 
 
     future_quotes : MarketFutureQuotes or List[MarketFutureQuotes]
     spot_quotes : MarketSpotQuotes or List[MarketSpotQuotes]
