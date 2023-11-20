@@ -1,12 +1,20 @@
-from financialmath.tools.date import * 
-from datetime import datetime
+from financialmath.model.svi import StochasticVolatilityInspired
+import matplotlib.pyplot as plt 
+import numpy as np
 
-from_date = datetime(year = 2021, month = 1, day = 1)
-to_date = datetime.now()
+test = StochasticVolatilityInspired(
+    atm_variance=0.01742625, 
+    atm_skew=-0.1752111, 
+    slope_put_wing=0.6997381, 
+    slope_call_wing=0.8564763, 
+    min_variance=0.0116249, 
+    t=1) 
 
-convention_list = list(DayCountConvention)
-output = dict()
-for c in convention_list: 
-    f = DayCountFactor(from_date,to_date,c).get()
-    output[c.value] = f
-print((output))
+k_vector = np.linspace(-1,1,100)
+
+#plt.plot(k_vector, test.total_variance(k=k_vector))
+#plt.show()
+
+plt.plot(k_vector, test.implied_volatility(k=k_vector))
+plt.plot(k_vector, test.local_volatility(k=k_vector))
+plt.show()
