@@ -1,42 +1,37 @@
 import numpy as np
 from scipy.stats import norm
 from typing import List
-from financialmath.pricing.option.schema import OptionValuationFunction
-from financialmath.tools.tool import MainTool
-from financialmath.tools.probability import NormalDistribution
 from dataclasses import dataclass
+from financialmath.tools.probability import NormalDistribution
 
 @dataclass 
 class BlackScholesInputData: 
-    S : float or list[float]
-    F : float or list[float]
-    r : float or list[float]
-    q : float or list[float]
-    sigma : float or list[float]
-    t : float or list[float]
-    K : float or list[float]
+    S : float or np.array
+    r : float or np.array
+    q : float or np.array
+    sigma : float or np.array
+    t : float or np.array
+    K : float or np.array
+
+    def d1(self):
+        S, K, r, q, sigma, t = self.S,self.K,self.r,self.q,self.sigma,self.t
+        return(np.log(S/K)+(r-q+sigma**2/2)*t)/(sigma*np.sqrt(t))
+    
+    def d2(self):
+        sigma, t = self.sigma,self.t
+        return self.d1()-sigma*np.sqrt(t)
 
 class BlackScholesEuropeanVanillaCall(OptionValuationFunction): 
 
     def __init__(self, inputdata:BlackScholesInputData):
-        self.S = MainTool.convert_to_numpy_array(x=inputdata.S)
-        self.K = MainTool.convert_to_numpy_array(x=inputdata.K)
-        self.q = MainTool.convert_to_numpy_array(x=inputdata.q)
-        self.r = MainTool.convert_to_numpy_array(x=inputdata.r)
-        self.t = MainTool.convert_to_numpy_array(x=inputdata.t)
-        self.sigma = MainTool.convert_to_numpy_array(x=inputdata.sigma)
-        self.d1 = MainTool.compute_blackscholes_d1(S = self.S,K = self.K,
-                                                    r = self.r,q = self.q,
-                                                    t = self.t, sigma = self.sigma)
-        self.d2 = MainTool.compute_blackscholes_d2(S = self.S,K = self.K,
-                                                    r = self.r,q = self.q,
-                                                    t = self.t, sigma = self.sigma)
-
+        self.S, self.K, self.q, self.r, self.t, self.sigma = inputdata.S,\
+             inputdata.K,inputdata.q,inputdata.r,inputdata.t,inputdata.sigma
+        self.d1 = inputdata.d1()
+        self.d2 = inputdata.d2()
         self.Nd1 = NormalDistribution().cdf(self.d1)
         self.Nd2 = NormalDistribution().cdf(self.d2)
         self.nd1 = NormalDistribution().pdf(self.d1)
         self.nd2 = NormalDistribution().pdf(self.d2)
-
 
     def get_max_length_param(self) -> int: 
         lparam = [len(x) for x in [self.S, self.K, self.q, 
@@ -172,18 +167,10 @@ class BlackScholesEuropeanVanillaCall(OptionValuationFunction):
 class BlackScholesEuropeanVanillaPut(OptionValuationFunction): 
 
     def __init__(self, inputdata:BlackScholesInputData):
-        self.S = MainTool.convert_to_numpy_array(x=inputdata.S)
-        self.K = MainTool.convert_to_numpy_array(x=inputdata.K)
-        self.q = MainTool.convert_to_numpy_array(x=inputdata.q)
-        self.r = MainTool.convert_to_numpy_array(x=inputdata.r)
-        self.t = MainTool.convert_to_numpy_array(x=inputdata.t)
-        self.sigma = MainTool.convert_to_numpy_array(x=inputdata.sigma)
-        self.d1 = MainTool.compute_blackscholes_d1(S = self.S,K = self.K,
-                                                    r = self.r,q = self.q,
-                                                    t = self.t, sigma = self.sigma)
-        self.d2 = MainTool.compute_blackscholes_d2(S = self.S,K = self.K,
-                                                    r = self.r,q = self.q,
-                                                    t = self.t, sigma = self.sigma)
+        self.S, self.K, self.q, self.r, self.t, self.sigma = inputdata.S,\
+             inputdata.K,inputdata.q,inputdata.r,inputdata.t,inputdata.sigma
+        self.d1 = inputdata.d1()
+        self.d2 = inputdata.d2()
         self.Nd1 = NormalDistribution().cdf(-self.d1)
         self.Nd2 = NormalDistribution().cdf(-self.d2)
         self.nd1 = NormalDistribution().pdf(-self.d1)
@@ -284,15 +271,13 @@ class BlackScholesEuropeanVanillaPut(OptionValuationFunction):
 class BlackEuropeanVanillaCall(OptionValuationFunction): 
 
     def __init__(self, inputdata:BlackScholesInputData):
-        self.F = MainTool.convert_to_numpy_array(x=inputdata.F)
-        self.K = MainTool.convert_to_numpy_array(x=inputdata.K)
-        self.r = MainTool.convert_to_numpy_array(x=inputdata.r)
-        self.t = MainTool.convert_to_numpy_array(x=inputdata.t)
-        self.sigma = MainTool.convert_to_numpy_array(x=inputdata.sigma)
+        self.F, self.K, self.r, self.t, self.sigma = inputdata.S,\
+             inputdata.K,inputdata.r,inputdata.t,inputdata.sigma
         self.df = np.exp(-self.r*self.t) 
-        inputdata_bs = BlackScholesInputData(
-            S=self.F,r=0,q=0,t=self.t, sigma=self.sigma, K=self.K)
-        self.bs = BlackScholesEuropeanVanillaCall(inputdata_bs) 
+        dbs = BlackScholesInputData(
+            S=self.F,r=0,q=0,t=self.t,
+            sigma=self.sigma,K=self.K)
+        self.bs = BlackScholesEuropeanVanillaCall(dbs) 
     
     def get_max_length_param(self) -> int: 
         lparam = [len(x) for x in [self.F, self.K, self.r, self.t, self.sigma]]
@@ -353,15 +338,13 @@ class BlackEuropeanVanillaCall(OptionValuationFunction):
 class BlackEuropeanVanillaPut(OptionValuationFunction): 
 
     def __init__(self, inputdata:BlackScholesInputData):
-        self.F = MainTool.convert_to_numpy_array(x=inputdata.F)
-        self.K = MainTool.convert_to_numpy_array(x=inputdata.K)
-        self.r = MainTool.convert_to_numpy_array(x=inputdata.r)
-        self.t = MainTool.convert_to_numpy_array(x=inputdata.t)
-        self.sigma = MainTool.convert_to_numpy_array(x=inputdata.sigma)
+        self.F, self.K, self.r, self.t, self.sigma = inputdata.S,\
+             inputdata.K,inputdata.r,inputdata.t,inputdata.sigma
         self.df = np.exp(-self.r*self.t) 
-        inputdata_bs = BlackScholesInputData(
-            S=self.F,r=0,q=0,t=self.t, sigma=self.sigma, K=self.K)
-        self.bs = BlackScholesEuropeanVanillaPut(inputdata_bs) 
+        dbs = BlackScholesInputData(
+            S=self.F,r=0,q=0,t=self.t,
+            sigma=self.sigma,K=self.K)
+        self.bs = BlackScholesEuropeanVanillaPut(dbs) 
     
     def get_max_length_param(self) -> int: 
         lparam = [len(x) for x in [self.F, self.K, self.r, self.t, self.sigma]]
