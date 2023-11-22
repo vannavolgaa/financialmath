@@ -38,10 +38,11 @@ class MonteCarloBlackScholesOutput:
     vol_down : np.array = None
     r_up : np.array = None
     q_up : np.array = None 
-    ds : float = 0 
-    dv : float = 0 
-    dr : float = 0 
-    dq : float = 0 
+    ds : float = 0.01
+    dv : float = 0.01
+    dr : float = 0.01 
+    dq : float = 0.01
+    dt : float = 0.01
 
 @dataclass
 class MonteCarloBlackScholes: 
