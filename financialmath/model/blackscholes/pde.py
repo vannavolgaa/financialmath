@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-
+import numpy as np
 
 @dataclass 
 class PDEBlackScholesInput: 
@@ -7,7 +7,8 @@ class PDEBlackScholesInput:
     r : float 
     q : float 
     sigma : float 
-    t : float 
+    t : float
+    T : float 
     number_steps : int = 400
     spot_vector_size : int = 100
     future : bool = False
@@ -37,7 +38,8 @@ class PDEBlackScholes:
         self.inputdata = inputdata 
         self.N = self.inputdata.number_steps
         self.M = self.inputdata.spot_vector_size
-        self.dt = self.inputdata.t/self.N
+        self.tau = self.inputdata.T - self.inputdata.t
+        self.dt = self.tau/self.N
         self.sigma = self.inputdata.sigma 
         self.r = self.inputdata.r 
         self.q = self.inputdata.q 
@@ -46,7 +48,7 @@ class PDEBlackScholes:
         self.dv = self.inputdata.dv
         self.dr = self.inputdata.dr
         self.dq = self.inputdata.dq 
-        self.df = 1/(1+r*self.dt)
+        self.df = 1/(1+self.r*self.dt)
         self.dx = self.logspot_step()
 
     def logspot_step(self) -> float: 

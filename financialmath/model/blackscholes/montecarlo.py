@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from enum import Enum
+from typing import List
 import numpy as np
+import time
 from financialmath.tools.simulation import RandomGenerator, RandomGeneratorType, NormalDistribution
+from financialmath.tools.tool import MainTool
 
-#TODO: add thread option in simulation
 
 class BlackScholesDiscretization(Enum): 
     euler = 1 
@@ -15,137 +17,210 @@ class MonteCarloBlackScholesInput:
     r : float 
     q : float 
     sigma : float 
-    t : float 
+    t : float
     number_steps : int = 400
     number_paths : int = 10000
     future : bool = False
-    greeks : bool = True
+    sensibility : bool = True
+    first_order_greek : bool = True
+    second_order_greek : bool = True
+    third_order_greek : bool = True
     randoms_generator : RandomGeneratorType = RandomGeneratorType.antithetic
     discretization: BlackScholesDiscretization=BlackScholesDiscretization.euler
-    ds : float = 0.01 
-    dv : float = 0.01 
+    dS : float = 0.01 
+    dsigma : float = 0.01 
     dr : float = 0.01 
     dq : float = 0.01 
 
 @dataclass
+class EulerBlackScholesSimulation: 
+    S: float 
+    r: float 
+    q: float 
+    sigma: float 
+    dt : float 
+    Z : float 
+    future : bool = True
+
+    def drift(self) -> float: 
+        if self.future: return -.5*self.dt*(self.sigma**2)
+        else: return (self.r-self.q-.5*(self.sigma**2))*self.dt
+
+    def diffusion(self) -> np.array: 
+       return self.sigma*np.sqrt(self.dt)*self.Z
+    
+    def simulate(self) -> np.array: 
+        return self.S*np.cumprod(self.drift()+self.diffusion(), axis=1)
+
+@dataclass
+class MilsteinBlackScholesSimulation: 
+    S: float 
+    r: float 
+    q: float 
+    sigma: float 
+    dt : float 
+    Z : float 
+    future : bool = True
+
+    def correction(self) -> np.array: 
+        return -.5*self.dt*(self.Z**2 - 1)*(self.sigma**2)
+    
+    def simulate(self) -> np.array: 
+        euler = EulerBlackScholesSimulation(
+            self.S,self.r, self.q, self.sigma, self.dt, self.Z, self.future)
+        return euler.simulate() + self.correction()
+      
+@dataclass
 class MonteCarloBlackScholesOutput: 
-    initial : np.array 
-    spot_squareup : np.array = None
-    spot_up : np.array = None
-    spot_down : np.array = None
-    spot_squaredown : np.array = None
-    vol_up : np.array = None
-    vol_down : np.array = None
-    r_up : np.array = None
-    q_up : np.array = None 
-    ds : float = 0.01
-    dv : float = 0.01
+
+    sim : np.array 
+    t_vector : np.array
+    steps_vector : np.array
+    time_taken : float 
+
+    #first order paths
+    sim_S_up : np.array = None
+    sim_sigma_up : np.array = None
+    sim_t_up : np.array = None
+    sim_r_up: np.array = None
+    sim_q_up : np.array = None
+    #second order paths
+    sim_sigma_down : np.array = None
+    sim_sigma_up_S_up : np.array = None
+    sim_sigma_up_S_down : np.array = None
+    sim_S_down : np.array = None
+    sim_t_up_S_up : np.array = None
+    sim_t_up_S_down : np.array = None
+    sim_t_up_sigma_up : np.array = None
+    sim_t_up_sigma_down : np.array = None
+    #third order paths
+    sim_S_uu : np.array = None
+    sim_S_dd : np.array = None
+    sim_sigma_dd : np.array = None
+    sim_sigma_uu : np.array = None
+    
+    first_order_greek : bool = True
+    second_order_greek : bool = True
+    third_order_greek : bool = True
+    dS : float = 0.01
+    dsigma : float = 0.01
     dr : float = 0.01 
     dq : float = 0.01
     dt : float = 0.01
 
-@dataclass
 class MonteCarloBlackScholes: 
 
-    inputdata:  MonteCarloBlackScholesInput
-
-    def __post_init__(self): 
-        self.N = self.inputdata.number_steps
-        self.M = self.inputdata.number_paths
-        self.dt = self.inputdata.t/self.N
+    def __post_init__(self, inputdata: MonteCarloBlackScholesInput): 
+        self.start = time.time()
+        self.inputdata = inputdata
+        self.t = self.inputdata.t
+        self.dt = self.t/self.N
         self.Z = self.generate_randoms()
         self.sigma = self.inputdata.sigma 
         self.r = self.inputdata.r 
         self.q = self.inputdata.q 
         self.S = self.inputdata.S 
-        self.ds = self.inputdata.ds
-        self.dv = self.inputdata.dv
+        self.dS = self.inputdata.dS
+        self.ds = self.inputdata.dsigma
         self.dr = self.inputdata.dr
         self.dq = self.inputdata.dq
+    
+    def t_vector(self) -> np.array: 
+        return np.cumsum(np.repeat(self.dt, self.N))
+    
+    def step_vector(self) -> np.array: 
+        return np.cumsum(np.repeat(1, self.N))
 
     def generate_randoms(self) -> np.array:
+        N,M = self.inputdata.number_steps, self.inputdata.number_paths
         generator =  RandomGenerator(
             probability_distribution=NormalDistribution(), 
             generator_type=self.inputdata.randoms_generator)
-        randoms = generator.generate(N=self.M*self.N)
-        return np.reshape(randoms, (self.M,self.N))
+        randoms = generator.generate(N=M*N)
+        return np.reshape(randoms, (M,N))
 
-    def drift(self, sigma:float, r:float=0, q:float=0) -> float: 
-        if self.inputdata.future: 
-             return -.5*(sigma**2)*self.dt
+    def compute_simulation(self, S:float, r:float, q:float, 
+                            sigma:float, dt: float, id) -> np.array: 
+        Z, d = self.Z, self.inputdata.discretization
+        if d is BlackScholesDiscretization.milstein: 
+            simulator = MilsteinBlackScholesSimulation(
+                S=S, r=r, q=q, sigma=sigma,Z=Z,
+                dt=dt, future=self.inputdata.future)
         else: 
-            return ((r-q)-.5*(sigma**2))*self.dt
-    
-    def diffusion(self, sigma:float) -> np.array: 
-        return sigma * np.sqrt(self.dt)*self.Z 
-    
-    def milstein_correction(self, sigma:float) -> np.array: 
-        return -.5*(sigma**2)*self.dt*(self.Z**2 - 1) 
-    
-    def euler_moneyness(self, sigma:float, r:float=0, q:float=0) -> np.array:
-        drift = self.drift(sigma=sigma, r=r, q=q) 
-        diffusion = self.diffusion(sigma=sigma) 
-        return np.cumprod(np.exp(drift+diffusion), axis = 1)
+            simulator = EulerBlackScholesSimulation(
+                S=S, r=r, q=q, sigma=sigma,Z=Z,
+                dt=dt,future=self.inputdata.future)
+        return {id:simulator.simulate()}
 
-    def simulation_no_greek(self) -> MonteCarloBlackScholesOutput: 
-        euler_moneyness= self.euler_moneyness(sigma=self.sigma, r=self.r, q=self.q)
-        if self.inputdata.discretization is BlackScholesDiscretization.milstein:
-            return MonteCarloBlackScholesOutput(
-                initial=self.milstein_price(self.S,self.sigma, euler_moneyness)) 
-        else: 
-            return MonteCarloBlackScholesOutput(
-                initial=self.euler_price(self.S, euler_moneyness))   
-    
-    def simulation_euler_with_greeks(self)-> MonteCarloBlackScholesOutput: 
+    def bump_parameters_list(self) -> List[tuple]: 
+        s, ds, dt, r, q, dr, dq, S, dS= self.sigma, self.ds,\
+        self.dt, self.r, self.q,self.dr, self.dq, self.S, self.dS
+        t = self.t
+        N=self.inputdata.number_steps
+        dt_up = (t+dt)/N
+        args_list = [(S, r, q, s, dt, 0)]
+        if self.inputdata.first_order_greek: 
+            new_args = [(S+dS, r, q, s, dt, 1), 
+                        (S, r+dr, q, s, dt, 2),
+                        (S, r, q+dq, s, dt, 3), 
+                        (S, r, q, s+ds, dt, 4), 
+                        (S, r, q, s, dt_up, 5)] 
+            args_list = args_list+new_args
+            if self.inputdata.second_order_greek: 
+                new_args = [(S-dS, r, q, s, dt, 6), 
+                            (S, r, q, s-ds, dt, 7),
+                            (S+dS, r, q, s+ds, dt, 8), 
+                            (S-dS, r, q, s+ds, dt, 9), 
+                            (S+dS, r, q, s, dt_up, 10),
+                            (S-dS, r, q, s, dt_up, 11),
+                            (S, r, q, s+ds, dt_up, 12),
+                            (S, r, q, s-ds, dt_up, 13)] 
+                args_list = args_list+new_args 
+                if self.inputdata.third_order_greek: 
+                    new_args = [(S+2*dS, r, q, s, dt, 14), 
+                                (S-2*dS, r, q, s, dt, 15),
+                                (S, r, q, s+2*ds, dt, 16), 
+                                (S, r, q, s-2*ds, dt, 17)] 
+                    args_list = args_list+new_args
+        return args_list
 
-        q, sigma, r, dv, dr, dq, ds = self.q, self.sigma, self.r, \
-                                    self.dv,self.dr,self.dq, self.ds
-        S = self.S
-        euler_moneyness= self.euler_moneyness(sigma,r,q)
-        euler_moneyness_vol_up= self.euler_moneyness(sigma+dv,r,q)
-        euler_moneyness_vol_down = self.euler_moneyness(sigma-dv,r,q)
-        euler_moneyness_r_up= self.euler_moneyness(sigma,r+dr,q)
-        euler_moneyness_q_up= self.euler_moneyness(sigma,r,q+dq) 
-        return MonteCarloBlackScholesOutput(
-            initial = S * euler_moneyness, 
-            spot_squareup = (S+2*ds)* euler_moneyness, 
-            spot_up = (S+ds)* euler_moneyness, 
-            spot_down = (S-ds)* euler_moneyness, 
-            spot_squaredown = (S-2*ds)* euler_moneyness, 
-            vol_up = S* euler_moneyness_vol_up, 
-            vol_down = S* euler_moneyness_vol_down, 
-            r_up = S*euler_moneyness_r_up, 
-            q_up= S*euler_moneyness_q_up, 
-            ds = ds, dv=dv, dr=dr, dq=dq
-        )
-
-    def simulation_milstein_with_greeks(self)-> MonteCarloBlackScholesOutput: 
-        sigma = self.sigma
-        milstein_correction = self.milstein_correction(sigma)
-        milstein_correction_vol_up = self.milstein_correction(sigma+self.dv)
-        milstein_correction_vol_down = self.milstein_correction(sigma-self.dv) 
-        output = self.simulation_euler_with_greeks()
-        output.initial = output.initial+milstein_correction
-        output.spot_squareup = output.spot_squareup+milstein_correction
-        output.spot_up = output.spot_up+milstein_correction
-        output.spot_squaredown = output.spot_squaredown+milstein_correction
-        output.spot_down = output.spot_down+milstein_correction
-        output.vol_up = output.vol_up+milstein_correction_vol_up
-        output.vol_down = output.vol_down+milstein_correction_vol_down
-        output.r_up = output.r_up+milstein_correction
-        output.q_up = output.q_up+milstein_correction
-        return output 
-    
-    def simulation(self) -> MonteCarloBlackScholesOutput: 
-        discretization = self.inputdata.discretization
-        if self.inputdata.greeks: 
-            if discretization is BlackScholesDiscretization.milstein: 
-                return self.simulation_milstein_with_greeks()
-            else: 
-                return self.simulation_euler_with_greeks()
-        else: return self.simulation_no_greek()
-        
-    
+    def get(self) -> MonteCarloBlackScholesOutput: 
+        simulations = MainTool.send_tasks_with_threading(
+            self.compute_simulation,self.bump_parameters_list())
+        simulations = MainTool.listdict_to_dictlist(simulations)
+        end = time.time()
+        output = MonteCarloBlackScholesOutput(
+            sim = simulations[0], 
+            t_vector=self.t_vector(), 
+            steps_vector=self.step_vector(),
+            time_taken=end-self.start, 
+            ds = self.ds, dsigma = self.ds, 
+            dt = self.dt, dr = self.dr, dq=self.dq, 
+            first_order_greek = self.inputdata.first_order_greek, 
+            second_order_greek = self.inputdata.second_order_greek, 
+            third_order_greek = self.inputdata.third_order_greek)
+        if self.inputdata.first_order_greek: 
+            output.sim_S_up = simulations[1] 
+            output.sim_sigma_up = simulations[4] 
+            output.sim_t_up = simulations[5] 
+            output.sim_r_up = simulations[2] 
+            output.sim_q_up = simulations[3] 
+            if self.inputdata.second_order_greek: 
+                output.sim_sigma_down = simulations[7] 
+                output.sim_sigma_up_S_up = simulations[8] 
+                output.sim_sigma_up_S_down = simulations[9] 
+                output.sim_S_down = simulations[6] 
+                output.sim_t_up_S_up = simulations[10] 
+                output.sim_t_up_S_down = simulations[11] 
+                output.sim_t_up_sigma_up = simulations[12] 
+                output.sim_t_up_sigma_down = simulations[13] 
+                if self.inputdata.third_order_greek: 
+                    output.sim_S_uu = simulations[14] 
+                    output.sim_S_dd = simulations[15] 
+                    output.sim_sigma_dd = simulations[17] 
+                    output.sim_sigma_uu = simulations[16] 
+        return output
+           
 
 
 

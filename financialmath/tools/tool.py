@@ -93,26 +93,27 @@ class MainTool:
 
     @staticmethod
     def dictlist_to_listdict(mydict: dict): 
-        keys = list(mydict.keys())
-        length = len(mydict[keys[0]])
-        output = []
-        for i in range(0, length): 
-            output.append({k : mydict[k][i] for k in keys})
-        return output 
+        return [dict(zip(mydict,t)) for t in zip(*mydict.values())]
+    
+    @staticmethod
+    def listdict_to_dictlist_samekey(mylist: List[dict]): 
+        return {k: [dic[k] for dic in mylist] for k in mylist[0]}
+    
+    @staticmethod
+    def listdict_to_dictlist_diffkey(mylist: List[dict]): 
+        common_keys = set.intersection(*map(set, mylist))
+        return {k: [dic[k] for dic in mylist] for k in common_keys}
+    
+    @staticmethod
+    def listdict_to_dictlist(mylist: List[dict]): 
+        out = {}
+        [out.update(i) for i in mylist]
+        return out 
 
     @staticmethod
     def convert_to_numpy_array(x:float or List[float]): 
         if isinstance(x, list): return np.array(x)
         else: return x
-    
-    @staticmethod
-    def compute_blackscholes_d1(S, K, r, q, t, sigma):
-        return(np.log(S/K)+(r-q+sigma**2/2)*t)/(sigma*np.sqrt(t))
-    
-    @staticmethod
-    def compute_blackscholes_d2(S, K, r, q, t, sigma):
-        d1 = MainTool.compute_blackscholes_d1(S=S,K=K,t=t,r=r,q=q, sigma=sigma)
-        return d1-sigma*np.sqrt(t)
     
     @staticmethod
     def convert_array_to_list(x: float or np.array): 

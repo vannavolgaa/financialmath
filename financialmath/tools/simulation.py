@@ -25,7 +25,7 @@ class RandomGenerator:
             N= N, mu = self.mu, sigma=self.sigma)
 
     def antithetic(self, N:int) -> np.array:
-        u = UniformDistribution.random(N = round(N/2))
+        u = UniformDistribution().random(N = round(N/2))
         u = np.concatenate((u,1-u))
         z = self.probability_distribution.inverse_cdf(
             x = u, mu = self.mu, sigma=self.sigma)
