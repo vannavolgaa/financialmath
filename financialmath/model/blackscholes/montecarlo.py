@@ -38,9 +38,9 @@ class EulerBlackScholesSimulation:
     r: float 
     q: float 
     sigma: float 
-    dt : float 
-    Z : float 
-    future : bool = True
+    dt: float 
+    Z: float 
+    future : bool = False
 
     def drift(self) -> float: 
         if self.future: return -.5*self.dt*(self.sigma**2)
@@ -48,9 +48,12 @@ class EulerBlackScholesSimulation:
 
     def diffusion(self) -> np.array: 
        return self.sigma*np.sqrt(self.dt)*self.Z
+
+    def moneyness_simulation(self)-> np.array: 
+        return np.cumprod(np.exp(self.drift()+self.diffusion()), axis=1)
     
-    def simulate(self) -> np.array: 
-        return self.S*np.cumprod(self.drift()+self.diffusion(), axis=1)
+    def spot_simulation(self) -> np.array: 
+        return self.S*self.moneyness_simulation()
 
 @dataclass
 class MilsteinBlackScholesSimulation: 
@@ -65,10 +68,10 @@ class MilsteinBlackScholesSimulation:
     def correction(self) -> np.array: 
         return -.5*self.dt*(self.Z**2 - 1)*(self.sigma**2)
     
-    def simulate(self) -> np.array: 
+    def spot_simulation(self) -> np.array: 
         euler = EulerBlackScholesSimulation(
             self.S,self.r, self.q, self.sigma, self.dt, self.Z, self.future)
-        return euler.simulate() + self.correction()
+        return euler.spot_simulation() + self.correction()
       
 @dataclass
 class MonteCarloBlackScholesOutput: 
@@ -110,21 +113,17 @@ class MonteCarloBlackScholesOutput:
 
 class MonteCarloBlackScholes: 
 
-    def __post_init__(self, inputdata: MonteCarloBlackScholesInput): 
+    def __init__(self, inputdata: MonteCarloBlackScholesInput): 
         self.start = time.time()
         self.inputdata = inputdata
-        self.t = self.inputdata.t
+        self.t, self.S, self.sigma, self.r, self.q = inputdata.t, inputdata.S,\
+            inputdata.sigma, inputdata.r, inputdata.q
+        self.dS, self.ds, self.dr, self.dq = inputdata.dS, inputdata.dsigma,\
+            inputdata.dr, inputdata.dq
+        self.N, self.M = inputdata.number_steps, inputdata.number_paths
         self.dt = self.t/self.N
         self.Z = self.generate_randoms()
-        self.sigma = self.inputdata.sigma 
-        self.r = self.inputdata.r 
-        self.q = self.inputdata.q 
-        self.S = self.inputdata.S 
-        self.dS = self.inputdata.dS
-        self.ds = self.inputdata.dsigma
-        self.dr = self.inputdata.dr
-        self.dq = self.inputdata.dq
-    
+
     def t_vector(self) -> np.array: 
         return np.cumsum(np.repeat(self.dt, self.N))
     
@@ -132,27 +131,14 @@ class MonteCarloBlackScholes:
         return np.cumsum(np.repeat(1, self.N))
 
     def generate_randoms(self) -> np.array:
-        N,M = self.inputdata.number_steps, self.inputdata.number_paths
+        N,M = self.N, self.M
         generator =  RandomGenerator(
             probability_distribution=NormalDistribution(), 
             generator_type=self.inputdata.randoms_generator)
         randoms = generator.generate(N=M*N)
         return np.reshape(randoms, (M,N))
 
-    def compute_simulation(self, S:float, r:float, q:float, 
-                            sigma:float, dt: float, id) -> np.array: 
-        Z, d = self.Z, self.inputdata.discretization
-        if d is BlackScholesDiscretization.milstein: 
-            simulator = MilsteinBlackScholesSimulation(
-                S=S, r=r, q=q, sigma=sigma,Z=Z,
-                dt=dt, future=self.inputdata.future)
-        else: 
-            simulator = EulerBlackScholesSimulation(
-                S=S, r=r, q=q, sigma=sigma,Z=Z,
-                dt=dt,future=self.inputdata.future)
-        return {id:simulator.simulate()}
-
-    def bump_parameters_list(self) -> List[tuple]: 
+    def args_simulation_list(self) -> List[tuple]: 
         s, ds, dt, r, q, dr, dq, S, dS= self.sigma, self.ds,\
         self.dt, self.r, self.q,self.dr, self.dq, self.S, self.dS
         t = self.t
@@ -184,9 +170,22 @@ class MonteCarloBlackScholes:
                     args_list = args_list+new_args
         return args_list
 
+    def compute_simulation(self, S:float, r:float, q:float, 
+                            sigma:float, dt: float, id) -> np.array: 
+        Z, d = self.Z, self.inputdata.discretization
+        if d is BlackScholesDiscretization.milstein: 
+            simulator = MilsteinBlackScholesSimulation(
+                S=S, r=r, q=q, sigma=sigma,Z=Z,
+                dt=dt, future=self.inputdata.future)
+        else: 
+            simulator = EulerBlackScholesSimulation(
+                S=S, r=r, q=q, sigma=sigma,Z=Z,
+                dt=dt,future=self.inputdata.future)
+        return {id:simulator.spot_simulation()}
+
     def get(self) -> MonteCarloBlackScholesOutput: 
         simulations = MainTool.send_tasks_with_threading(
-            self.compute_simulation,self.bump_parameters_list())
+            self.compute_simulation,self.args_simulation_list())
         simulations = MainTool.listdict_to_dictlist(simulations)
         end = time.time()
         output = MonteCarloBlackScholesOutput(
@@ -194,7 +193,7 @@ class MonteCarloBlackScholes:
             t_vector=self.t_vector(), 
             steps_vector=self.step_vector(),
             time_taken=end-self.start, 
-            ds = self.ds, dsigma = self.ds, 
+            dS = self.dS, dsigma = self.ds, 
             dt = self.dt, dr = self.dr, dq=self.dq, 
             first_order_greek = self.inputdata.first_order_greek, 
             second_order_greek = self.inputdata.second_order_greek, 
