@@ -1,5 +1,10 @@
 from dataclasses import dataclass
 import numpy as np
+from typing import List
+from scipy import sparse
+import time
+from financialmath.tools.finitedifference import OneFactorImplicitScheme
+from financialmath.tools.tool import MainTool
 
 @dataclass 
 class PDEBlackScholesInput: 
@@ -11,11 +16,14 @@ class PDEBlackScholesInput:
     number_steps : int = 400
     spot_vector_size : int = 100
     future : bool = False
-    greeks : bool = True
-    ds : float = 0.01 
-    dv : float = 0.01 
+    dS : float = 0.01 
+    dsigma : float = 0.01 
     dr : float = 0.01 
     dq : float = 0.01 
+    first_order_greek : bool = True
+    second_order_greek : bool = True
+    third_order_greek : bool = True
+    use_futures_thread : bool = True
 
 @dataclass
 class PDEBlackScholesOutput: 
@@ -23,18 +31,22 @@ class PDEBlackScholesOutput:
     spot_vector : np.array
     step_vector : np.array 
     t_vector : np.array 
+    time_taken : float
     grid_list_sigma_up : np.array = None
     grid_list_sigma_down : np.array = None
     grid_list_r_up : np.array = None
     grid_list_q_up : np.array = None
     grid_list_sigma_uu : np.array = None 
     grid_list_sigma_dd : np.array = None
-    ds : float = 0.01
-    dv : float = 0.01
+    dS : float = 0.01
+    dsigma : float = 0.01
     dr : float = 0.01 
     dq : float = 0.01 
     dt : float = 0.01
-
+    first_order_greek : bool = True
+    second_order_greek : bool = True
+    third_order_greek : bool = True
+    
 @dataclass 
 class ImplicitBlackScholes: 
     sigma : float 
@@ -44,6 +56,7 @@ class ImplicitBlackScholes:
     dt : float 
     M : int 
     N : int 
+    future: bool
 
     def __post_init__(self): 
         self.df = 1/(1+self.r*self.dt)
@@ -55,34 +68,44 @@ class ImplicitBlackScholes:
 
     def up_move(self) -> float: 
         sigma, dt, dx, r, q = self.sigma, self.dt, self.dx, self.r, self.q
+        if self.future: r,q = 0,0
         u = (r-q-(sigma**2)/2)*dt/(2*dx)
         pu = self.df*(self.p + u)
-        return np.reshape(np.repeat(pu,M*N),(M,N)) 
+        return np.reshape(np.repeat(pu,self.M*self.N),(self.M,self.N)) 
 
-    def down_move(self, sigma:float, r:float, q:float) -> float:
+    def down_move(self) -> float:
         sigma, dt, dx, r, q = self.sigma, self.dt, self.dx, self.r, self.q
+        if self.future: r,q = 0,0
         d = (r-q-(sigma**2)/2)*dt/(2*dx)
         pd = self.df*(self.p - d)  
-        return np.reshape(np.repeat(pd,M*N),(M,N))  
+        return np.reshape(np.repeat(pd,self.M*self.N),(self.M,self.N))  
 
-    def mid_move(self, sigma:float) -> float: 
+    def mid_move(self) -> float: 
         pm = self.df*(1-2*self.p)
-        return np.reshape(np.repeat(pm,M*N),(M,N))
+        return np.reshape(np.repeat(pm,self.M*self.N),(self.M,self.N)) 
+    
+    def transition_matrixes(self) -> List[sparse.csc_matrix]: 
+        scheme = OneFactorImplicitScheme(
+            up_matrix=self.up_move(), 
+            down_matrix=self.down_move(), 
+            mid_matrix=self.mid_move(),
+            N = self.N, M=self.M)
+        return scheme.transition_matrixes()
 
 class PDEBlackScholes: 
 
     def __init__(self, inputdata:PDEBlackScholesInput):
+        self.start = time.time()
         self.inputdata = inputdata 
         self.N = self.inputdata.number_steps
         self.M = self.inputdata.spot_vector_size
-        self.tau = self.inputdata.T - self.inputdata.t
-        self.dt = self.tau/self.N
+        self.dt = self.inputdata.t/self.N
         self.sigma = self.inputdata.sigma 
         self.r = self.inputdata.r 
         self.q = self.inputdata.q 
         self.S = self.inputdata.S 
-        self.ds = self.inputdata.ds
-        self.dv = self.inputdata.dv
+        self.dS = self.inputdata.dS
+        self.ds = self.inputdata.dsigma
         self.dr = self.inputdata.dr
         self.dq = self.inputdata.dq 
         self.df = 1/(1+self.r*self.dt)
@@ -90,27 +113,82 @@ class PDEBlackScholes:
 
     def logspot_step(self) -> float: 
         return self.sigma * np.sqrt(2*self.dt)
+    
+    def t_vector(self) -> np.array: 
+        return np.cumsum(np.repeat(self.dt, self.N))
+    
+    def step_vector(self) -> np.array: 
+        return np.cumsum(np.repeat(1, self.N))
 
-    def generate_spot_vector(self) -> np.array: 
+    def spot_vector(self) -> np.array: 
         spotvec = np.empty(self.M)
         spotvec[0] = self.S*np.exp((-self.dx*self.M/2))
         for i in range(1,self.M): 
             spotvec[i] = spotvec[i-1]*np.exp(self.dx)
         return spotvec
     
-    def discounted_probability_up_move(self, sigma:float, r:float, q:float) -> float: 
-        p = self.dt*(sigma**2)/(2*(self.dx**2))
-        u = (r-q-(sigma**2)/2)*self.dt/(2*self.dx)
-        return np.reshape(np.repeat(self.df*(p + u),self.M*self.N),(self.M,self.N)) 
+    def compute_matrixes(self, arg:tuple[float])\
+        -> dict[int,List[sparse.csc_matrix]]:
+        r, q, sigma, id= arg[0], arg[1], arg[2], arg[3]
+        scheme = ImplicitBlackScholes(
+            sigma,r,q,self.dx,
+            self.dt,self.M,self.N, 
+            self.inputdata.future)
+        return {id:scheme.transition_matrixes()}
+    
+    def args_fd_list(self) -> List[tuple]: 
+        s, ds, r, q, dr, dq,= self.sigma, self.ds, self.r, self.q,\
+            self.dr, self.dq
+        args_list = [(r, q, s, 0)]
+        if self.inputdata.first_order_greek: 
+            new_args = [(r+dr, q, s, 1),
+                        (r, q+dq, s, 2), 
+                        (r, q, s+ds, 3)] 
+            args_list = args_list+new_args
+            if self.inputdata.second_order_greek: 
+                new_args = [(r, q, s-ds, 4)] 
+                args_list = args_list+new_args 
+                if self.inputdata.third_order_greek: 
+                    new_args = [(r, q, s-2*ds, 5),
+                                (r, q, s+2*ds, 6)] 
+                    args_list = args_list+new_args
+        return args_list
 
-    def discounted_probability_down_move(self, sigma:float, r:float, q:float) -> float:
-        p = self.dt*(sigma**2)/(2*(self.dx**2))
-        d = (r-q-(sigma**2)/2)*self.dt/(2*self.dx)
-        return self.df*(p - d)  
+    def get_matrixes(self) -> dict[int, np.array]: 
+        if self.inputdata.use_futures_thread: 
+            matrixes = MainTool.send_task_with_futures(
+            self.compute_matrixes,self.args_fd_list())
+        else: 
+            matrixes = [self.compute_matrixes(a)
+                        for a in self.args_fd_list()]
+        return MainTool.listdict_to_dictlist(matrixes)
+    
+    def get(self) -> PDEBlackScholesOutput: 
+        matrixes = self.get_matrixes()
+        end = time.time()
+        output = PDEBlackScholesOutput(
+            grid_list = matrixes[0], 
+            t_vector=self.t_vector(), 
+            step_vector=self.step_vector(),
+            spot_vector=self.spot_vector(),
+            time_taken=end-self.start, 
+            dS = self.dS, dsigma = self.ds, 
+            dt = self.dt, dr = self.dr, dq=self.dq, 
+            first_order_greek = self.inputdata.first_order_greek, 
+            second_order_greek = self.inputdata.second_order_greek, 
+            third_order_greek = self.inputdata.third_order_greek)
+        if self.inputdata.first_order_greek: 
+            output.grid_list_sigma_up = matrixes[3] 
+            output.grid_list_r_up = matrixes[1] 
+            output.grid_list_q_up = matrixes[2] 
+            if self.inputdata.second_order_greek: 
+                output.grid_list_sigma_down = matrixes[4] 
+                if self.inputdata.third_order_greek: 
+                    output.grid_list_sigma_uu = matrixes[6] 
+                    output.grid_list_sigma_dd = matrixes[5] 
+        return output
 
-    def discounted_probability_mid_move(self, sigma:float) -> float: 
-        p = self.dt*(sigma**2)/(2*(self.dx**2))
-        return self.df*(1-2*p)
 
+    
     
 

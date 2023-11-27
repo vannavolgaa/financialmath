@@ -1,95 +1,17 @@
 import numpy as np 
 from typing import List
-import threading 
-import sys as _sys
-
-class ThreadWithReturn(threading.Thread):
-
-    def __init__(self, group=None, target=None, name=None,
-                 args=(), kwargs=None, *, daemon=None):
-        super().__init__(group, target, name, args, kwargs, daemon=daemon)
-        self.__value = None
-
-    def run(self):
-        try:
-            if self._target:
-                return self._target(*self._args, **self._kwargs)
-        finally:
-            del self._target, self._args, self._kwargs
-
-    def _bootstrap_inner(self):
-        try:
-            self._set_ident()
-            self._set_tstate_lock()
-            self._started.set()
-            with threading._active_limbo_lock:
-                threading._active[self._ident] = self
-                del threading._limbo[self]
-
-            if threading._trace_hook:
-                _sys.settrace(threading._trace_hook)
-            if threading._profile_hook:
-                threading. _sys.setprofile(threading._profile_hook)
-
-            try:
-                self.__value = True, self.run()
-            except SystemExit:
-                pass
-            except:
-                exc_type, exc_value, exc_tb = self._exc_info()
-                self.__value = False, exc_value
-                if _sys and _sys.stderr is not None:
-                    print("Exception in thread %s:\n%s" %
-                          (self.name, threading._format_exc()), file=_sys.stderr)
-                elif self._stderr is not None:
-                    try:
-                        print((
-                            "Exception in thread " + self.name +
-                            " (most likely raised during interpreter shutdown):"), file=self._stderr)
-                        print((
-                            "Traceback (most recent call last):"), file=self._stderr)
-                        while exc_tb:
-                            print((
-                                '  File "%s", line %s, in %s' %
-                                (exc_tb.tb_frame.f_code.co_filename,
-                                    exc_tb.tb_lineno,
-                                    exc_tb.tb_frame.f_code.co_name)), file=self._stderr)
-                            exc_tb = exc_tb.tb_next
-                        print(("%s: %s" % (exc_type, exc_value)), file=self._stderr)
-                    finally:
-                        del exc_type, exc_value, exc_tb
-            finally:
-                pass
-        finally:
-            with threading._active_limbo_lock:
-                try:
-                    del threading._active[threading.get_ident()]
-                except:
-                    pass
-
-    @property
-    def returned(self):
-        if self.__value is None:
-            self.join()
-        if self.__value is not None:
-            valid, value = self.__value
-            if valid:
-                return value
-            raise value
+import concurrent.futures
 
 class MainTool: 
 
     @staticmethod
-    def send_tasks_with_threading(task : object, args: List[tuple]) -> List:
-        output = []
-        for a in args:
-            threads = []
-            thread = ThreadWithReturn(target=task,
-                                    args=a, daemon=True)
-            thread.start()
-            threads.append(thread)
-            output.append([thread.returned for thread in threads])
-        return [o[0] for o in output]
+    def send_task_with_futures(task:object, args: List[tuple], 
+                               max_workers=4) -> List: 
+        executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_workers)
+        futures = [executor.submit(task, a) for a in args]
+        concurrent.futures.wait(futures)
+        return [f.result() for f in futures]
 
     @staticmethod
     def dictlist_to_listdict(mydict: dict): 

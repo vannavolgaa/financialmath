@@ -21,7 +21,6 @@ class MonteCarloBlackScholesInput:
     number_steps : int = 400
     number_paths : int = 10000
     future : bool = False
-    sensibility : bool = True
     first_order_greek : bool = True
     second_order_greek : bool = True
     third_order_greek : bool = True
@@ -31,6 +30,7 @@ class MonteCarloBlackScholesInput:
     dsigma : float = 0.01 
     dr : float = 0.01 
     dq : float = 0.01 
+    use_futures_thread : bool = True
 
 @dataclass
 class EulerBlackScholesSimulation: 
@@ -170,8 +170,8 @@ class MonteCarloBlackScholes:
                     args_list = args_list+new_args
         return args_list
 
-    def compute_simulation(self, S:float, r:float, q:float, 
-                            sigma:float, dt: float, id) -> np.array: 
+    def compute_simulation(self, arg:tuple[float]) -> np.array: 
+        S,r,q,sigma,dt,id = arg[0],arg[1],arg[2],arg[3],arg[4],arg[5]
         Z, d = self.Z, self.inputdata.discretization
         if d is BlackScholesDiscretization.milstein: 
             simulator = MilsteinBlackScholesSimulation(
@@ -183,10 +183,17 @@ class MonteCarloBlackScholes:
                 dt=dt,future=self.inputdata.future)
         return {id:simulator.spot_simulation()}
 
-    def get(self) -> MonteCarloBlackScholesOutput: 
-        simulations = MainTool.send_tasks_with_threading(
+    def get_simulations(self) -> dict[int, np.array]: 
+        if self.inputdata.use_futures_thread: 
+            simulations = MainTool.send_task_with_futures(
             self.compute_simulation,self.args_simulation_list())
-        simulations = MainTool.listdict_to_dictlist(simulations)
+        else: 
+            simulations = [self.compute_simulation(a)
+                            for a in self.args_simulation_list()]
+        return MainTool.listdict_to_dictlist(simulations)
+
+    def get(self) -> MonteCarloBlackScholesOutput: 
+        simulations = self.get_simulations()
         end = time.time()
         output = MonteCarloBlackScholesOutput(
             sim = simulations[0], 
