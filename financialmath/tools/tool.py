@@ -89,7 +89,7 @@ class MainTool:
             thread.start()
             threads.append(thread)
             output.append([thread.returned for thread in threads])
-        return output 
+        return [o[0] for o in output]
 
     @staticmethod
     def dictlist_to_listdict(mydict: dict): 

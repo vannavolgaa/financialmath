@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+from scipy import sparse
 import numpy as np 
 import matplotlib.pyplot as plt 
 from financialmath.instruments.option import *
+
 
 @dataclass
 class FiniteDifferenceGreeks: 
@@ -14,11 +16,11 @@ class FiniteDifferenceGreeks:
 
     #first order 
     V : float 
-    V_S_u : float 
-    V_sigma_u : float
-    V_t_u : float 
-    V_r_u : float 
-    V_q_u : float   
+    V_S_u : float = np.nan 
+    V_sigma_u : float = np.nan
+    V_t_u : float = np.nan
+    V_r_u : float = np.nan
+    V_q_u : float = np.nan
 
     #second order 
     V_sigma_d : float = np.nan
