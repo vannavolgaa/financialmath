@@ -153,7 +153,6 @@ class StochasticVolatilityInspired:
         w = self.total_variance(k=k)
         dwdk = self.tool.dwdk(k=k)
         d2wd2k = self.tool.d2wd2k(k=k)
-        #d2wd2k=0
         sq_dwdk = dwdk**2
         term1 = (1-k*dwdk/(2*w))**2
         term2 = .25*sq_dwdk*(.25+1/w)

@@ -166,12 +166,11 @@ class OneFactorGridGenerator:
         grid[:, self.N-1] = self.final_prices
         price_vec = self.final_prices
         for n in range(self.N-1, -1, -1):
-            tmatobj =  self.grid_list[n]
+            tmat =  self.grid_list[n]
             price_vec = tmat.dot(price_vec) 
             price_vec = self.check_path_condition(price_vec,n)
             grid[:, n] = price_vec
         return grid 
-
 
 @dataclass
 class OneFactorPDEPricing: 
