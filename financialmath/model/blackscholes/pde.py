@@ -5,6 +5,7 @@ from scipy import sparse
 import time
 from financialmath.tools.finitedifference import OneFactorImplicitScheme
 from financialmath.tools.tool import MainTool
+from financialmath.instruments.option import *
 
 @dataclass 
 class PDEBlackScholesInput: 
@@ -188,7 +189,14 @@ class PDEBlackScholes:
                     output.grid_list_sigma_dd = matrixes[5] 
         return output
 
+@dataclass
+class PDEBlackScholesPricing: 
 
-    
+    option : Option 
+    inputdata : PDEBlackScholesInput
+
+    def __post_init__(self): 
+        pass
+
     
 
