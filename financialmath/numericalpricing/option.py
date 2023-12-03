@@ -169,7 +169,7 @@ class GridOptionPrices:
     V_S_d_t_u : float 
 
 @dataclass
-class OneFactorFiniteDifferencePricing: 
+class SpotFactorFiniteDifferencePricing: 
     option : Option 
     grid_list : List[sparse.csc_matrix]
     spot_vector : np.array
@@ -303,5 +303,5 @@ class OneFactorFiniteDifferencePricing:
             V_S_d_t_u=pdt[2], V_S_u_t_u=pdt[1], V_t_u=pdt[0])
         
 @dataclass
-class MonteCarloPricing: 
+class SpotSimulationPricing:
     pass
