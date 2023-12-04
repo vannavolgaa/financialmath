@@ -5,13 +5,15 @@ import numpy as np
 import matplotlib.pyplot as plt 
 from financialmath.instruments.option import *
 from dataclasses import dataclass
+from financialmath.pricing.option2.pde import PDEBlackScholesValuation
+
 S = 100 
 r = 0.01
 q = 0.02 
 t = 1 
 sigma = 0.2
 N = 500
-M = 10000
+M = 250
 dt = t/N
 
 mcinput = MonteCarloBlackScholesInput(
@@ -27,14 +29,41 @@ pdeinput = PDEBlackScholesInput(
     spot_vector_size=M, 
     number_steps=N)
 
-test = MonteCarloBlackScholes(mcinput).get()
-sim = test.sim
+#test = MonteCarloBlackScholes(mcinput).get()
+#sim = test.sim
 #plt.plot(np.transpose(sim))
-#plt.show()
+#plt.show()k
 
-opt_payoff = OptionPayoff(OptionalityType.call,ExerciseType.european, forward_start=True)
-opt_spec = OptionSpecification(100, OptionTenor(expiry=1, forward_start=0.5))
+opt_payoff = OptionPayoff(OptionalityType.call,ExerciseType.european)
+opt_spec = OptionSpecification(100, OptionTenor(expiry=1))
 option = Option(opt_spec, opt_payoff)
+
+
+test = PDEBlackScholesValuation(option,pdeinput)
+
+test2 = test.valuation()
+
+test2.sensitivities.delta
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @dataclass
 class PathLookBack: 

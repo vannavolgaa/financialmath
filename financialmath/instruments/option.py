@@ -103,6 +103,12 @@ class OptionPayoff:
             case BarrierType.double_knock_out: return True
             case _: return False
 
+    def is_early_exercise(self) -> bool: 
+        match self.exercise:
+            case ExerciseType.european: return False
+            case ExerciseType.american: return True
+            case ExerciseType.bermudan: return True
+    
 @dataclass
 class OptionTenor: 
     expiry : float 
