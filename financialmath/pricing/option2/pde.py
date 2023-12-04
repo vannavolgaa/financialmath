@@ -47,7 +47,7 @@ class PDEBlackScholesValuation:
                      (self.output.grid_list_sigma_dd, 6)]
         if self.use_futures_thread: 
             opgrids = MainTool.send_task_with_futures(
-                self.compute_option_price_grid,args_list,max_workers=7)
+                self.compute_option_price_grid,args_list)
         else: 
             opgrids = [self.compute_option_price_grid(a) for a in args_list]
         opgrids = MainTool.listdict_to_dictlist(opgrids)
