@@ -2,17 +2,25 @@ from financialmath.model.blackscholes.montecarlo import (BlackScholesDiscretizat
 MonteCarloBlackScholes, MonteCarloBlackScholesInput)
 from financialmath.model.blackscholes.pde import (PDEBlackScholes, PDEBlackScholesInput)
 import numpy as np 
+isinstance(np.array(5).item(), float)
 import matplotlib.pyplot as plt 
 from financialmath.instruments.option import *
 from dataclasses import dataclass
 from financialmath.pricing.option2.pde import PDEBlackScholesValuation
+
+def dictlist_to_listdict(mydict: dict): 
+        return [dict(zip(mydict,t)) for t in zip(*mydict.values())]
+
+dictlist_to_listdict({'a' : [1], 'b': [2]})
+
+
 
 S = 100 
 r = 0.01
 q = 0.02 
 t = 1 
 sigma = 0.2
-N = 500
+N = 600
 M = 250
 dt = t/N
 
@@ -21,49 +29,24 @@ mcinput = MonteCarloBlackScholesInput(
     number_paths=M, 
     number_steps=N,
     discretization=BlackScholesDiscretization.milstein,
-    first_order_greek=False, 
-    second_order_greek=False, 
-    third_order_greek=False)
+    first_order_greek=True, 
+    second_order_greek=True, 
+    third_order_greek=True,
+    use_futures_thread=False)
 pdeinput = PDEBlackScholesInput(
     S=S, r=r,q=q,t=t,sigma=sigma,
     spot_vector_size=M, 
-    number_steps=N)
+    number_steps=N, use_futures_thread=True, 
+    third_order_greek=False, second_order_greek=False, first_order_greek=False)
 
 #test = MonteCarloBlackScholes(mcinput).get()
-#sim = test.sim
+#test.time_taken
 #plt.plot(np.transpose(sim))
 #plt.show()k
 
 opt_payoff = OptionPayoff(OptionalityType.call,ExerciseType.european)
 opt_spec = OptionSpecification(100, OptionTenor(expiry=1))
 option = Option(opt_spec, opt_payoff)
-
-
-test = PDEBlackScholesValuation(option,pdeinput)
-
-test2 = test.valuation()
-
-test2.sensitivities.delta
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 @dataclass
 class PathLookBack: 

@@ -21,7 +21,7 @@ class BlackScholesInputData:
         sigma, t = self.sigma,self.t
         return self.d1()-sigma*np.sqrt(t)
 
-class BlackScholesEuropeanVanillaCall(OptionValuationFunction): 
+class BlackScholesEuropeanVanillaCall: 
 
     def __init__(self, inputdata:BlackScholesInputData):
         self.S, self.K, self.q, self.r, self.t, self.sigma = inputdata.S,\
@@ -164,7 +164,7 @@ class BlackScholesEuropeanVanillaCall(OptionValuationFunction):
         term2 = d1*d2*(1-d1*d2) + d1**2 + d2**2
         return term1*term2 
     
-class BlackScholesEuropeanVanillaPut(OptionValuationFunction): 
+class BlackScholesEuropeanVanillaPut: 
 
     def __init__(self, inputdata:BlackScholesInputData):
         self.S, self.K, self.q, self.r, self.t, self.sigma = inputdata.S,\
@@ -268,7 +268,7 @@ class BlackScholesEuropeanVanillaPut(OptionValuationFunction):
     def ultima(self) -> float or np.array: 
         return self.eurocall.ultima()
  
-class BlackEuropeanVanillaCall(OptionValuationFunction): 
+class BlackEuropeanVanillaCall: 
 
     def __init__(self, inputdata:BlackScholesInputData):
         self.F, self.K, self.r, self.t, self.sigma = inputdata.S,\
@@ -335,7 +335,7 @@ class BlackEuropeanVanillaCall(OptionValuationFunction):
     def ultima(self) -> float or np.array: 
         return self.df*self.bs.ultima()
  
-class BlackEuropeanVanillaPut(OptionValuationFunction): 
+class BlackEuropeanVanillaPut: 
 
     def __init__(self, inputdata:BlackScholesInputData):
         self.F, self.K, self.r, self.t, self.sigma = inputdata.S,\

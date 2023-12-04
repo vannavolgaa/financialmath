@@ -4,8 +4,8 @@ import numpy as np
 from financialmath.instruments.option import Option 
 from financialmath.model.blackscholes.pde import (PDEBlackScholes,
 PDEBlackScholesInput, PDEBlackScholesOutput)
-from financialmath.pricing.numericalpricing.option import (SpotFactorFiniteDifferencePricing, 
-OptionPriceGrids, FiniteDifferencePricer)
+from financialmath.pricing.numericalpricing.option import (OneFactorFiniteDifferencePricer, 
+OneFactorOptionPriceGrids, OneFactorFiniteDifferenceGreeks)
 from financialmath.pricing.schemas import OptionGreeks, OptionValuationResult
 from financialmath.tools.tool import MainTool
 
@@ -19,7 +19,7 @@ class PDEBlackScholesValuation:
     def __post_init__(self): 
         self.start = time.time()
         self.output = PDEBlackScholes(inputdata=self.inputdata).get()
-        self.pricer = FiniteDifferencePricer(self.option_price_grids())
+        self.pricer = OneFactorFiniteDifferenceGreeks(self.option_price_grids())
         self.end = time.time()
     
     def method(self): 
@@ -31,13 +31,13 @@ class PDEBlackScholesValuation:
         S, dS, dt = self.inputdata.S, self.output.dS, self.output.dt
         spot_vector = self.output.spot_vector
         try: 
-            fdm = SpotFactorFiniteDifferencePricing(
+            fdm = OneFactorFiniteDifferencePricer(
                 option = self.option, grid_list = grids, 
                 spot_vector=spot_vector, S=S, dt=dt, dS=dS) 
             return {i:fdm.option_price_grid()}
         except: return {i:np.reshape(np.repeat(np.nan, M*N),(M,N))}
     
-    def option_price_grids(self) -> OptionPriceGrids: 
+    def option_price_grids(self) -> OneFactorOptionPriceGrids: 
         args_list = [(self.output.grid_list, 0),
                      (self.output.grid_list_sigma_up, 1), 
                      (self.output.grid_list_sigma_down, 2),
@@ -47,12 +47,12 @@ class PDEBlackScholesValuation:
                      (self.output.grid_list_sigma_dd, 6)]
         if self.use_futures_thread: 
             opgrids = MainTool.send_task_with_futures(
-                self.compute_option_price_grid,args_list)
+                self.compute_option_price_grid,args_list,max_workers=7)
         else: 
             opgrids = [self.compute_option_price_grid(a) for a in args_list]
         opgrids = MainTool.listdict_to_dictlist(opgrids)
         data = self.inputdata
-        return OptionPriceGrids(
+        return OneFactorOptionPriceGrids(
             initial=opgrids[0], 
             spot_vector = self.output.spot_vector, 
             S=data.S, dS = data.dS, dsigma=data.dsigma, 

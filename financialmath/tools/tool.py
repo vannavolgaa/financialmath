@@ -46,6 +46,10 @@ class MainTool:
     def convert_any_to_list(x): 
         if not isinstance(x, list): return [x]
         else: return x
+    
+    @staticmethod
+    def flatten_list(x:List[List]) -> List: 
+        return [item for sublist in x for item in sublist]
 
     @staticmethod
     def order_join_lists(keys:List, values:List, 

@@ -6,7 +6,7 @@ from financialmath.instruments.option import *
 from financialmath.pricing.schemas import OptionGreeks
 
 @dataclass
-class PayOffTool2: 
+class OptionPayOffTool: 
     spot:np.array or float
     strike: np.array or float
     barier_up: np.array or float
@@ -58,126 +58,7 @@ class PayOffTool2:
         return payoff
 
 @dataclass
-class MonteCarloGreeks: 
-    S: float 
-    # deltas
-    dS : float 
-    dsigma : float 
-    dt : float 
-    dr : float 
-    dq : float 
-
-    #first order 
-    V : float 
-    V_S_u : float = np.nan 
-    V_sigma_u : float = np.nan
-    V_t_u : float = np.nan
-    V_r_u : float = np.nan
-    V_q_u : float = np.nan
-
-    #second order 
-    V_sigma_d : float = np.nan
-    V_sigma_u_S_u : float = np.nan
-    V_sigma_u_S_d : float = np.nan
-    V_S_d : float = np.nan
-    V_t_u_S_u : float = np.nan
-    V_t_u_S_d : float = np.nan
-    V_t_u_sigma_u : float = np.nan
-    V_t_u_sigma_d : float= np.nan
-    
-    #third order 
-    V_S_dd : float = np.nan
-    V_S_uu : float = np.nan
-    V_sigma_uu : float = np.nan
-    V_sigma_dd : float = np.nan
-    
-    def __post_init__(self): 
-        self.Su = self.S*(1+self.dS)
-        self.Suu = self.S*(1+self.dS)**2
-        self.Sdd = self.S*(1-self.dS)**2
-        self.Sd = self.S*(1-self.dS)
-        
-
-    def price(self): 
-        return self.V
-
-    #first order
-    def delta(self): 
-        return (self.V_S_u-self.V)/(self.Su-self.S)
-    
-    def vega(self): 
-        return (self.V_sigma_u-self.V)/self.dsigma 
-    
-    def theta(self): 
-        return (self.V_t_u-self.V)/-self.dt
-
-    def rho(self): 
-        return (self.V_r_u-self.V)/self.dr
-
-    def epsilon(self): 
-        return (self.V_q_u-self.V)/self.dq
-    
-    # second order   
-    def gamma(self): 
-        return (self.V_S_u+self.V_S_d-2*self.V)/((100*self.dS)**2)
-    
-    def volga(self): 
-        return (self.V_sigma_u+self.V_sigma_d-2*self.V)/(2*self.dsigma) 
-    
-    def vanna(self): 
-        delta_up = (self.V_sigma_u_S_u-self.V)/(self.Su-self.S)
-        delta_down = (self.V-self.V_sigma_u_S_d)/(self.S-self.Sd)
-        return (delta_up-delta_down)/self.dsigma
-    
-    def charm(self): 
-        delta_up = (self.V_t_u_S_u-self.V)/(self.Su-self.S)
-        delta_down = (self.V-self.V_t_u_S_d)/(self.S-self.Sd)
-        return (delta_up-delta_down)/-self.dt 
-
-    def veta(self): 
-        vega_up = (self.V_t_u_sigma_u-self.V)/self.dsigma 
-        vega_down = (self.V-self.V_t_u_sigma_d)/self.dsigma 
-        return (vega_up-vega_down)/-self.dt
-
-    #third order
-    def speed(self): 
-        delta_up = (self.V_S_u-self.V)/(self.Su-self.S)
-        delta_down = (self.V-self.V_S_d)/(self.S-self.Sd)
-        delta_uu = (self.V_S_uu-self.V_S_u)/(self.Suu-self.Su)
-        delta_dd = (self.V_S_d - self.V_S_dd)/(self.Sd-self.Sdd)
-        gamma_up = (delta_uu - delta_up)/(self.Suu-self.Su)
-        gamma_down = (delta_down - delta_dd)/(self.Sd-self.Sdd)
-        return (gamma_up-gamma_down)/(self.Su-self.Sd)
-    
-    def ultima(self): 
-        vega_up = (self.V_sigma_u-self.V)/self.dsigma
-        vega_down = (self.V-self.V_sigma_d)/self.dsigma
-        vega_uu = (self.V_sigma_uu-self.V_sigma_u)/self.dsigma
-        vega_dd = (self.V_sigma_d - self.V_sigma_dd)/self.dsigma
-        volga_up = (vega_uu - vega_up)/self.dsigma
-        volga_down = (vega_down - vega_dd)/self.dsigma
-        return (volga_up-volga_down)/self.dsigma
-
-    def color(self): 
-        d = (self.dt*(self.Su-self.Sd)**2)
-        return (self.V_t_u_S_u+self.V_t_u_S_d-2*self.V_t_u)/d
-
-    def zomma(self): 
-        d = (self.dsigma*(self.Su-self.Sd)**2)
-        return (self.V_sigma_u_S_u+self.V_sigma_u_S_d-2*self.V_sigma_u)/d
-    
-    def greeks(self) -> OptionGreeks: 
-        return OptionGreeks(delta=self.delta(), vega=self.vega(), 
-                            theta=self.theta(), rho = self.rho(),
-                            epsilon=self.epsilon(),gamma = self.gamma(), 
-                            vanna = self.vanna(), charm = self.charm(), 
-                            veta = self.veta(), volga = self.volga(),
-                            vera=np.nan, speed = self.speed(), 
-                            zomma = self.zomma(), color = self.color(), 
-                            ultima=self.ultima()) 
-
-@dataclass
-class OptionPriceGrids: 
+class OneFactorOptionPriceGrids: 
     initial : np.array 
     spot_vector : np.array
     S : float 
@@ -194,9 +75,9 @@ class OptionPriceGrids:
     dq : float = 0.01
 
 @dataclass
-class FiniteDifferencePricer: 
+class OneFactorFiniteDifferenceGreeks: 
 
-    inputdata : OptionPriceGrids 
+    inputdata : OneFactorOptionPriceGrids 
     interpolation_method: str = 'cubic'
 
     def __post_init__(self): 
@@ -346,7 +227,7 @@ class FiniteDifferencePricer:
             ultima=np.nan)
         
 @dataclass
-class SpotFactorFiniteDifferencePricing: 
+class OneFactorFiniteDifferencePricer: 
     option : Option 
     grid_list : List[sparse.csc_matrix]
     spot_vector : np.array
@@ -361,7 +242,7 @@ class SpotFactorFiniteDifferencePricing:
         self. M = len(self.spot_vector)
         self.option_steps = self.spec.get_steps(self.N)
         self.dt = self.spec.tenor.expiry/self.N
-        self.ptool = PayOffTool2(
+        self.ptool = OptionPayOffTool(
             spot=self.spot_vector, 
             strike = self.spec.strike, 
             barrier_down=self.spec.barrier_down, 
@@ -377,7 +258,7 @@ class SpotFactorFiniteDifferencePricing:
             return f(value).item()
         except: return np.nan 
 
-    def early_exercise_condition(self, ptool: PayOffTool2,
+    def early_exercise_condition(self, ptool: OptionPayOffTool,
                                   prices : np.array, n:int) -> np.array: 
         payoff = ptool.payoff_vector()
         match self.option.payoff.exercise_type:
@@ -388,7 +269,7 @@ class SpotFactorFiniteDifferencePricing:
                     return np.maximum(payoff, prices)
                 else: return prices
     
-    def touch_barrier_condition(self, ptool: PayOffTool2,
+    def touch_barrier_condition(self, ptool: OptionPayOffTool,
                                 prices: np.array, n:int) -> np.array: 
         condition = ptool.barrier_condition()
         match self.option.payoff.barrier_observation: 
@@ -405,7 +286,7 @@ class SpotFactorFiniteDifferencePricing:
                 else: return prices
             case _: return prices
             
-    def check_path_condition(self, ptool: PayOffTool2, 
+    def check_path_condition(self, ptool: OptionPayOffTool, 
                              prices : np.array, n:int) -> np.array: 
         if ptool.payoff.is_barrier():
             prices = self.touch_barrier_condition(ptool,prices, n)
@@ -413,7 +294,7 @@ class SpotFactorFiniteDifferencePricing:
             prices = self.early_exercise_condition(ptool, prices, n)
         return prices
     
-    def generate_grid(self, ptool: PayOffTool2) -> np.array: 
+    def generate_grid(self, ptool: OptionPayOffTool) -> np.array: 
         p0 = ptool.payoff_vector()
         grid_shape = (self.M, self.N)
         grid = np.zeros(grid_shape)
@@ -470,5 +351,120 @@ class SpotFactorFiniteDifferencePricing:
         else: return self.generate_grid(self.ptool)
 
 @dataclass
-class SpotSimulationPricing:
-    pass
+class MonteCarloGreeks: 
+    S: float 
+    # deltas
+    dS : float 
+    dsigma : float 
+    dt : float 
+    dr : float 
+    dq : float 
+
+    #first order 
+    V : float 
+    V_S_u : float = np.nan 
+    V_sigma_u : float = np.nan
+    V_t_u : float = np.nan
+    V_r_u : float = np.nan
+    V_q_u : float = np.nan
+
+    #second order 
+    V_sigma_d : float = np.nan
+    V_sigma_u_S_u : float = np.nan
+    V_sigma_u_S_d : float = np.nan
+    V_S_d : float = np.nan
+    V_t_u_S_u : float = np.nan
+    V_t_u_S_d : float = np.nan
+    V_t_u_sigma_u : float = np.nan
+    V_t_u_sigma_d : float= np.nan
+    
+    #third order 
+    V_S_dd : float = np.nan
+    V_S_uu : float = np.nan
+    V_sigma_uu : float = np.nan
+    V_sigma_dd : float = np.nan
+    
+    def __post_init__(self): 
+        self.Su = self.S*(1+self.dS)
+        self.Suu = self.S*(1+self.dS)**2
+        self.Sdd = self.S*(1-self.dS)**2
+        self.Sd = self.S*(1-self.dS)
+        
+
+    def price(self): 
+        return self.V
+
+    #first order
+    def delta(self): 
+        return (self.V_S_u-self.V)/(self.Su-self.S)
+    
+    def vega(self): 
+        return (self.V_sigma_u-self.V)/self.dsigma 
+    
+    def theta(self): 
+        return (self.V_t_u-self.V)/-self.dt
+
+    def rho(self): 
+        return (self.V_r_u-self.V)/self.dr
+
+    def epsilon(self): 
+        return (self.V_q_u-self.V)/self.dq
+    
+    # second order   
+    def gamma(self): 
+        return (self.V_S_u+self.V_S_d-2*self.V)/((100*self.dS)**2)
+    
+    def volga(self): 
+        return (self.V_sigma_u+self.V_sigma_d-2*self.V)/(2*self.dsigma) 
+    
+    def vanna(self): 
+        delta_up = (self.V_sigma_u_S_u-self.V)/(self.Su-self.S)
+        delta_down = (self.V-self.V_sigma_u_S_d)/(self.S-self.Sd)
+        return (delta_up-delta_down)/self.dsigma
+    
+    def charm(self): 
+        delta_up = (self.V_t_u_S_u-self.V)/(self.Su-self.S)
+        delta_down = (self.V-self.V_t_u_S_d)/(self.S-self.Sd)
+        return (delta_up-delta_down)/-self.dt 
+
+    def veta(self): 
+        vega_up = (self.V_t_u_sigma_u-self.V)/self.dsigma 
+        vega_down = (self.V-self.V_t_u_sigma_d)/self.dsigma 
+        return (vega_up-vega_down)/-self.dt
+
+    #third order
+    def speed(self): 
+        delta_up = (self.V_S_u-self.V)/(self.Su-self.S)
+        delta_down = (self.V-self.V_S_d)/(self.S-self.Sd)
+        delta_uu = (self.V_S_uu-self.V_S_u)/(self.Suu-self.Su)
+        delta_dd = (self.V_S_d - self.V_S_dd)/(self.Sd-self.Sdd)
+        gamma_up = (delta_uu - delta_up)/(self.Suu-self.Su)
+        gamma_down = (delta_down - delta_dd)/(self.Sd-self.Sdd)
+        return (gamma_up-gamma_down)/(self.Su-self.Sd)
+    
+    def ultima(self): 
+        vega_up = (self.V_sigma_u-self.V)/self.dsigma
+        vega_down = (self.V-self.V_sigma_d)/self.dsigma
+        vega_uu = (self.V_sigma_uu-self.V_sigma_u)/self.dsigma
+        vega_dd = (self.V_sigma_d - self.V_sigma_dd)/self.dsigma
+        volga_up = (vega_uu - vega_up)/self.dsigma
+        volga_down = (vega_down - vega_dd)/self.dsigma
+        return (volga_up-volga_down)/self.dsigma
+
+    def color(self): 
+        d = (self.dt*(self.Su-self.Sd)**2)
+        return (self.V_t_u_S_u+self.V_t_u_S_d-2*self.V_t_u)/d
+
+    def zomma(self): 
+        d = (self.dsigma*(self.Su-self.Sd)**2)
+        return (self.V_sigma_u_S_u+self.V_sigma_u_S_d-2*self.V_sigma_u)/d
+    
+    def greeks(self) -> OptionGreeks: 
+        return OptionGreeks(delta=self.delta(), vega=self.vega(), 
+                            theta=self.theta(), rho = self.rho(),
+                            epsilon=self.epsilon(),gamma = self.gamma(), 
+                            vanna = self.vanna(), charm = self.charm(), 
+                            veta = self.veta(), volga = self.volga(),
+                            vera=np.nan, speed = self.speed(), 
+                            zomma = self.zomma(), color = self.color(), 
+                            ultima=self.ultima()) 
