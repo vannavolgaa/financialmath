@@ -21,16 +21,13 @@ class MonteCarloBlackScholesInput:
     number_steps : int = 400
     number_paths : int = 10000
     future : bool = False
-    first_order_greek : bool = True
-    second_order_greek : bool = True
-    third_order_greek : bool = True
     randoms_generator : RandomGeneratorType = RandomGeneratorType.antithetic
     discretization: BlackScholesDiscretization=BlackScholesDiscretization.euler
     dS : float = 0.01 
     dsigma : float = 0.01 
     dr : float = 0.01 
     dq : float = 0.01 
-    use_futures_thread : bool = True
+    max_workers : bool = 4
 
 @dataclass
 class EulerBlackScholesSimulation: 
@@ -102,9 +99,6 @@ class MonteCarloBlackScholesOutput:
     sim_sigma_dd : np.array = None
     sim_sigma_uu : np.array = None
     
-    first_order_greek : bool = True
-    second_order_greek : bool = True
-    third_order_greek : bool = True
     dS : float = 0.01
     dsigma : float = 0.01
     dr : float = 0.01 
@@ -138,21 +132,22 @@ class MonteCarloBlackScholes:
         randoms = generator.generate(N=M*N)
         return np.reshape(randoms, (M,N))
 
-    def args_simulation_list(self) -> List[tuple]: 
+    def args_simulation_list(self, greek1: bool=True, greek2:bool=True, 
+                        greek3:bool=True) -> List[tuple]: 
         s, ds, dt, r, q, dr, dq, S, dS= self.sigma, self.ds,\
         self.dt, self.r, self.q,self.dr, self.dq, self.S, self.dS
         t = self.t
         N=self.inputdata.number_steps
         dt_up = (t+dt)/N
         args_list = [(S, r, q, s, dt, 0)]
-        if self.inputdata.first_order_greek: 
+        if greek1: 
             new_args = [(S+dS, r, q, s, dt, 1), 
                         (S, r+dr, q, s, dt, 2),
                         (S, r, q+dq, s, dt, 3), 
                         (S, r, q, s+ds, dt, 4), 
                         (S, r, q, s, dt_up, 5)] 
             args_list = args_list+new_args
-            if self.inputdata.second_order_greek: 
+            if greek2: 
                 new_args = [(S-dS, r, q, s, dt, 6), 
                             (S, r, q, s-ds, dt, 7),
                             (S+dS, r, q, s+ds, dt, 8), 
@@ -162,7 +157,7 @@ class MonteCarloBlackScholes:
                             (S, r, q, s+ds, dt_up, 12),
                             (S, r, q, s-ds, dt_up, 13)] 
                 args_list = args_list+new_args 
-                if self.inputdata.third_order_greek: 
+                if greek3: 
                     new_args = [(S+2*dS, r, q, s, dt, 14), 
                                 (S-2*dS, r, q, s, dt, 15),
                                 (S, r, q, s+2*ds, dt, 16), 
@@ -183,17 +178,19 @@ class MonteCarloBlackScholes:
                 dt=dt,future=self.inputdata.future)
         return {id:simulator.spot_simulation()}
 
-    def get_simulations(self) -> dict[int, np.array]: 
-        if self.inputdata.use_futures_thread: 
-            simulations = MainTool.send_task_with_futures(
-            self.compute_simulation,self.args_simulation_list())
-        else: 
-            simulations = [self.compute_simulation(a)
-                            for a in self.args_simulation_list()]
+    def get_simulations(self, greek1: bool=True, greek2:bool=True, 
+                        greek3:bool=True) -> dict[int, np.array]: 
+        args = self.args_simulation_list(greek1, greek2, greek3)
+        simulations = MainTool.send_task_with_futures(self.compute_simulation,
+                    args, max_workers=self.inputdata.max_workers)
         return MainTool.listdict_to_dictlist(simulations)
 
-    def get(self) -> MonteCarloBlackScholesOutput: 
-        simulations = self.get_simulations()
+    def get(self, first_order_greek:bool = True, 
+            second_order_greek:bool = True, 
+            third_order_greek:bool = True) -> MonteCarloBlackScholesOutput: 
+        simulations = self.get_simulations(first_order_greek,
+                                           second_order_greek,
+                                           third_order_greek)
         end = time.time()
         output = MonteCarloBlackScholesOutput(
             sim = simulations[0], 
@@ -201,17 +198,14 @@ class MonteCarloBlackScholes:
             steps_vector=self.step_vector(),
             time_taken=end-self.start, 
             dS = self.dS, dsigma = self.ds, 
-            dt = self.dt, dr = self.dr, dq=self.dq, 
-            first_order_greek = self.inputdata.first_order_greek, 
-            second_order_greek = self.inputdata.second_order_greek, 
-            third_order_greek = self.inputdata.third_order_greek)
-        if self.inputdata.first_order_greek: 
+            dt = self.dt, dr = self.dr, dq=self.dq)
+        if first_order_greek: 
             output.sim_S_up = simulations[1] 
             output.sim_sigma_up = simulations[4] 
             output.sim_t_up = simulations[5] 
             output.sim_r_up = simulations[2] 
             output.sim_q_up = simulations[3] 
-            if self.inputdata.second_order_greek: 
+            if second_order_greek: 
                 output.sim_sigma_down = simulations[7] 
                 output.sim_sigma_up_S_up = simulations[8] 
                 output.sim_sigma_up_S_down = simulations[9] 
@@ -220,7 +214,7 @@ class MonteCarloBlackScholes:
                 output.sim_t_up_S_down = simulations[11] 
                 output.sim_t_up_sigma_up = simulations[12] 
                 output.sim_t_up_sigma_down = simulations[13] 
-                if self.inputdata.third_order_greek: 
+                if third_order_greek: 
                     output.sim_S_uu = simulations[14] 
                     output.sim_S_dd = simulations[15] 
                     output.sim_sigma_dd = simulations[17] 

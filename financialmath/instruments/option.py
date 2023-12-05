@@ -51,7 +51,7 @@ class OptionPayoff:
     gap : bool = False
     forward_start : bool = False
     barrier_type : BarrierType = None
-    barrier_obervation : ObservationType = None
+    barrier_observation : ObservationType = None
     lookback_strike : LookbackStrikeType = None  
     lookback_method : LookbackMethod = None    
     lookback_obervation : ObservationType = None   
@@ -73,7 +73,7 @@ class OptionPayoff:
             case _: return None
 
     def is_barrier(self) -> bool: 
-        if (self.barrier_type is None) or (self.barrier_obervation is None):
+        if (self.barrier_type is None) or (self.barrier_observation is None):
             return False
         else: return True
     
@@ -164,92 +164,9 @@ class OptionSpecification:
         return OptionSteps(tenor=self.tenor, N=N)
 
 @dataclass
-class PayOffTool: 
-
-    specification : OptionSpecification
-    payoff : OptionPayoff
-    S : np.array
-
-    def __post_init__(self): 
-        self.K = self.specification.strike
-        self.Bu = self.specification.barrier_up
-        self.Bd = self.specification.barrier_down
-        self.R = self.specification.rebate
-        self.G = self.specification.gap_trigger
-        self.binary_amount = self.specification.binary_amout
-        self.rebate = self.specification.rebate
-
-    def barrier_condition(self) -> np.array: 
-        S=self.S
-        b_up = self.Bu
-        b_down = self.Bd
-        match self.payoff.barrier_type: 
-            case BarrierType.up_and_in:
-                condition = (S>b_up)
-            case BarrierType.up_and_out:
-                condition = (S<b_up)
-            case BarrierType.down_and_in: 
-                condition = (S<b_down)
-            case BarrierType.down_and_out: 
-                condition = (S>b_down)
-            case BarrierType.double_knock_in:
-                condition = (S<b_down) & (S>b_up)
-            case BarrierType.double_knock_out:
-                condition = (S>b_down) & (S<b_up) 
-            case _: 
-                condition = np.repeat(1, len(S))
-        return condition.astype(int) 
-
-    def vanilla_payoff(self) -> np.array: 
-        S = self.S 
-        K = self.K
-        match self.payoff.option_type: 
-            case OptionalityType.call: 
-                return np.maximum(S-K,0)
-            case OptionalityType.put: 
-                return np.maximum(K-S,0)
-            case _: 
-                return np.repeat(np.nan, self.M) 
-
-    def gap_payoff(self) -> np.array: 
-        S = self.S 
-        G = self.G
-        K = self.K
-        match self.payoff.option_type: 
-            case OptionalityType.call: 
-                return (S>G).astype(int)*(S-K)
-            case OptionalityType.put: 
-                return (S<G).astype(int)*(K-S)
-            case _: 
-                return np.repeat(np.nan, self.M)
-    
-    def binary_payoff(self, payoff: np.array) -> np.array:
-        return (abs(payoff)>0).astype(int)*self.binary_amount*np.sign(payoff)
-
-    def payoff_vector(self) -> np.array: 
-        if self.payoff.gap: 
-            payoff = self.gap_payoff()
-        else: 
-            payoff = self.vanilla_payoff()
-        barrier_cond = self.barrier_condition()
-        barrier_invcond = np.abs(np.array(barrier_cond) -1)
-        payoff = payoff * barrier_cond + barrier_invcond*self.rebate
-        if self.payoff.binary: 
-            payoff = self.binary_payoff(payoff = payoff)
-        return payoff
-
-    def payoff_viewer(self): 
-        payoff = self.payoff_vector()
-        plt.plot(self.S, payoff)
-        plt.show()
-
-@dataclass
 class Option: 
     specification : OptionSpecification 
     payoff : OptionPayoff 
-
-    def payofftool(self, S: np.array): 
-        return PayOffTool(self.specification, self.payoff, S)
     
 @dataclass
 class MarketOptionQuotes: 

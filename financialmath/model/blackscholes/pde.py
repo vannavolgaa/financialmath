@@ -21,11 +21,8 @@ class PDEBlackScholesInput:
     dsigma : float = 0.01 
     dr : float = 0.01 
     dq : float = 0.01 
-    first_order_greek : bool = True
-    second_order_greek : bool = True
-    third_order_greek : bool = True
-    use_futures_thread : bool = True
-
+    max_workers = 7 
+    
 @dataclass
 class PDEBlackScholesOutput: 
     grid_list : np.array 
@@ -44,9 +41,6 @@ class PDEBlackScholesOutput:
     dr : float = 0.01 
     dq : float = 0.01 
     dt : float = 0.01
-    first_order_greek : bool = True
-    second_order_greek : bool = True
-    third_order_greek : bool = True
     
 @dataclass 
 class ImplicitBlackScholes: 
@@ -137,35 +131,38 @@ class PDEBlackScholes:
             self.inputdata.future)
         return {id:scheme.transition_matrixes()}
     
-    def args_fd_list(self) -> List[tuple]: 
+    def args_fd_list(self, greek1:bool = True, 
+            greek2:bool = True, greek3:bool = True) -> List[tuple]: 
         s, ds, r, q, dr, dq,= self.sigma, self.ds, self.r, self.q,\
             self.dr, self.dq
         args_list = [(r, q, s, 0)]
-        if self.inputdata.first_order_greek: 
+        if greek1: 
             new_args = [(r+dr, q, s, 1),
                         (r, q+dq, s, 2), 
                         (r, q, s+ds, 3)] 
             args_list = args_list+new_args
-            if self.inputdata.second_order_greek: 
+            if greek2: 
                 new_args = [(r, q, s-ds, 4)] 
                 args_list = args_list+new_args 
-                if self.inputdata.third_order_greek: 
+                if greek3: 
                     new_args = [(r, q, s-2*ds, 5),
                                 (r, q, s+2*ds, 6)] 
                     args_list = args_list+new_args
         return args_list
 
-    def get_matrixes(self) -> dict[int, np.array]: 
-        if self.inputdata.use_futures_thread: 
-            matrixes = MainTool.send_task_with_futures(
-            self.compute_matrixes,self.args_fd_list())
-        else: 
-            matrixes = [self.compute_matrixes(a)
-                        for a in self.args_fd_list()]
+    def get_matrixes(self,greek1:bool = True, greek2:bool = True, 
+            greek3:bool = True) -> dict[int, np.array]: 
+        args = self.args_fd_list(greek1,greek2,greek3)
+        matrixes = MainTool.send_task_with_futures(self.compute_matrixes,
+                    args, max_workers=self.inputdata.max_workers)
         return MainTool.listdict_to_dictlist(matrixes)
     
-    def get(self) -> PDEBlackScholesOutput: 
-        matrixes = self.get_matrixes()
+    def get(self, first_order_greek:bool = True, 
+            second_order_greek:bool = True, 
+            third_order_greek:bool = True) -> PDEBlackScholesOutput: 
+        matrixes = self.get_matrixes(first_order_greek, 
+                                     second_order_greek, 
+                                     third_order_greek)
         end = time.time()
         output = PDEBlackScholesOutput(
             grid_list = matrixes[0], 
@@ -174,17 +171,14 @@ class PDEBlackScholes:
             spot_vector=self.spot_vector(),
             time_taken=end-self.start, 
             dS = self.dS, dsigma = self.ds, 
-            dt = self.dt, dr = self.dr, dq=self.dq, 
-            first_order_greek = self.inputdata.first_order_greek, 
-            second_order_greek = self.inputdata.second_order_greek, 
-            third_order_greek = self.inputdata.third_order_greek)
-        if self.inputdata.first_order_greek: 
+            dt = self.dt, dr = self.dr, dq=self.dq)
+        if first_order_greek: 
             output.grid_list_sigma_up = matrixes[3] 
             output.grid_list_r_up = matrixes[1] 
             output.grid_list_q_up = matrixes[2] 
-            if self.inputdata.second_order_greek: 
+            if second_order_greek: 
                 output.grid_list_sigma_down = matrixes[4] 
-                if self.inputdata.third_order_greek: 
+                if third_order_greek: 
                     output.grid_list_sigma_uu = matrixes[6] 
                     output.grid_list_sigma_dd = matrixes[5] 
         return output

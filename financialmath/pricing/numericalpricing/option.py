@@ -261,7 +261,7 @@ class OneFactorFiniteDifferencePricer:
     def early_exercise_condition(self, ptool: OptionPayOffTool,
                                   prices : np.array, n:int) -> np.array: 
         payoff = ptool.payoff_vector()
-        match self.option.payoff.exercise_type:
+        match self.option.payoff.exercise:
             case ExerciseType.european: return prices
             case ExerciseType.american: return np.maximum(payoff, prices)
             case ExerciseType.bermudan: 
@@ -273,16 +273,18 @@ class OneFactorFiniteDifferencePricer:
                                 prices: np.array, n:int) -> np.array: 
         condition = ptool.barrier_condition()
         match self.option.payoff.barrier_observation: 
-            case ObservationType.continuous: return condition*prices
+            case ObservationType.continuous: 
+                return condition*prices + self.ptool.rebate_payoff()
             case ObservationType.in_fine: return prices
             case ObservationType.discrete: 
                 if n in self.option_steps.barrier_discrete: 
-                    return condition*prices
+                    return condition*prices + self.ptool.rebate_payoff()
                 else: return prices
             case ObservationType.window:
                 end = self.option_steps.barrier_window_end
                 begin = self.option_steps.barrier_window_begin
-                if n >= begin and n <= end: return condition*prices
+                if n >= begin and n <= end: 
+                    return condition*prices+self.ptool.rebate_payoff()
                 else: return prices
             case _: return prices
             
@@ -329,7 +331,7 @@ class OneFactorFiniteDifferencePricer:
             binary=option_payoff.binary, 
             option_type=option_payoff.option_type, 
             gap =option_payoff.gap, 
-            barrier_obervation=option_payoff.barrier_obervation, 
+            barrier_observation=option_payoff.barrier_observation, 
             barrier_type=barrier)
         ptool = self.ptool
         ptool.payoff = payoff
@@ -468,3 +470,96 @@ class MonteCarloGreeks:
                             vera=np.nan, speed = self.speed(), 
                             zomma = self.zomma(), color = self.color(), 
                             ultima=self.ultima()) 
+
+@dataclass
+class MonteCarloLookback: 
+    sim : np.array 
+    option_steps : OptionSteps
+    forward_start : bool 
+    lookback_strike : LookbackStrikeType
+    look_back_method : LookbackMethod
+    observation_type : ObservationType
+
+@dataclass
+class MonteCarloPricing: 
+    sim : np.array 
+    option : Option 
+    r : float
+
+    def __post_init__(self): 
+        self.M, self.N = sim.shape[0], sim.shape[1]
+        self.option_steps = self.option.specification.get_steps(self.N)
+    
+    def lookback(self): 
+        pass 
+    
+    def barrier_up(self) -> np.array: 
+        b_up = self.option.specification.barrier_up
+        N, M = self.N, self.M
+        if self.option.payoff.forward_start: 
+            spot_forward_start = self.sim[:,self.option_steps.forward_start]
+            vec = b_up * spot_forward_start
+            n = N - self.option_steps.forward_start
+            return np.reshape(np.repeat(vec, n), (M,n)) 
+        else: return np.reshape(np.repeat(b_up,N*M), (M,N))  
+    
+    def barrier_down(self) -> np.array: 
+        b_down = self.option.specification.barrier_down
+        N, M = self.N, self.M
+        if self.option.payoff.forward_start: 
+            spot_forward_start = self.sim[:,self.option_steps.forward_start]
+            vec = b_down * spot_forward_start
+            n = N - self.option_steps.forward_start
+            return np.reshape(np.repeat(vec, n), (M,n)) 
+        else: return np.reshape(np.repeat(b_down,N*M), (M,N))   
+    
+    def gap(self) -> np.array: 
+        g = self.option.specification.gap_trigger
+        N, M = self.N, self.M
+        if self.option.payoff.forward_start: 
+            spot_forward_start = self.sim[:,self.option_steps.forward_start]
+            vec = g * spot_forward_start
+            n = N - self.option_steps.forward_start
+            return np.reshape(np.repeat(vec, n), (M,n)) 
+        else: return np.reshape(np.repeat(g,N*M), (M,N))    
+    
+    def rebate(self) -> np.array: 
+        rebate = self.option.specification.rebate
+        N, M = self.N, self.M
+        if self.option.payoff.forward_start: 
+            n = N - self.option_steps.forward_start
+            return np.reshape(np.repeat(rebate, n*M), (M,n)) 
+        else: return np.reshape(np.repeat(rebate,N*M), (M,N))     
+    
+    def binary_amount(self) -> np.array: 
+        binary_amount = self.option.specification.binary_amount
+        N, M = self.N, self.M
+        if self.option.payoff.forward_start: 
+            n = N - self.option_steps.forward_start
+            return np.reshape(np.repeat(binary_amount, n*M), (M,n)) 
+        else:  return np.reshape(np.repeat(binary_amount,N*M), (M,N))     
+    
+    def strike(self) -> int: 
+        output = np.zeros((self.M, self.N))
+        if self.option.payoff.is_lookback():
+            pass 
+        else: 
+            K = self.option.specification.strike
+            if self.option.payoff.forward_start: 
+                spot = self.sim[:,self.start_simulation()]
+                output[:,:] = K*spot
+            else: output[:,:] = K
+        return output
+    
+    def gap(self) -> int: 
+        output = np.zeros((self.M, self.N))
+        G = self.option.specification.gap_trigger
+        if self.option.payoff.forward_start: 
+            spot = self.sim[:,self.start_simulation()]
+            output[:,:] = G*spot
+        else: output[:,:] = G
+        return output
+    
+
+
+
