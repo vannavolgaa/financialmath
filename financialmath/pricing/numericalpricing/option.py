@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from scipy import sparse, interpolate
 from typing import List
 from financialmath.instruments.option import *
-from financialmath.pricing.schemas import OptionGreeks
 
 @dataclass
 class OptionPayOffTool: 
@@ -201,30 +200,30 @@ class OneFactorFiniteDifferenceGreeks:
 
     def ultima(self) -> float: 
         return np.nan
-
-    def greeks(self) -> OptionGreeks: 
-        return OptionGreeks(
-            delta=self.delta(self.S,self.V_0,self.dS), 
-            vega=self.vega(self.S,self.V_0_volu,self.V_0,self.dsigma), 
-            theta=self.theta(self.S,self.V_dt,self.V_0,self.dt),
-            rho=self.rho(self.S,self.V_0_rp,self.V_0,self.dr),
-            epsilon=self.epsilon(self.S,self.V_0_qp,self.V_0,self.dq),
-            gamma=self.gamma(self.S, self.V_0, self.dS),
-            vanna=self.vanna(self.S, self.V_0_volu,self.V_0,self.dS,
+    
+    def greeks(self) -> dict[str, float]: 
+        return {
+            'delta':self.delta(self.S,self.V_0,self.dS), 
+            'vega':self.vega(self.S,self.V_0_volu,self.V_0,self.dsigma), 
+            'theta':self.theta(self.S,self.V_dt,self.V_0,self.dt),
+            'rho':self.rho(self.S,self.V_0_rp,self.V_0,self.dr),
+            'epsilon':self.epsilon(self.S,self.V_0_qp,self.V_0,self.dq),
+            'gamma':self.gamma(self.S, self.V_0, self.dS),
+            'vanna':self.vanna(self.S, self.V_0_volu,self.V_0,self.dS,
                              self.dsigma),
-            volga=self.volga(self.S,self.V_0_volu,self.V_0,
+            'volga':self.volga(self.S,self.V_0_volu,self.V_0,
                              self.V_0_vold,self.dsigma),
-            charm=self.charm(self.S,self.V_dt,self.V_0,
+            'charm':self.charm(self.S,self.V_dt,self.V_0,
                              self.dS,self.dt),
-            veta=self.veta(self.S,self.V_dt_volu,self.V_dt,self.V_0_volu,
+            'veta':self.veta(self.S,self.V_dt_volu,self.V_dt,self.V_0_volu,
                            self.V_0,self.dsigma,self.dt),
-            vera=np.nan,
-            speed=self.speed(self.S,self.V_0,self.dS),
-            zomma=self.zomma(self.S,self.V_0_volu,self.V_0,self.dS,
+            'vera':np.nan,
+            'speed':self.speed(self.S,self.V_0,self.dS),
+            'zomma':self.zomma(self.S,self.V_0_volu,self.V_0,self.dS,
                              self.dsigma),
-            color=self.color(self.S, self.V_dt, self.V_0, self.dS, 
+            'color':self.color(self.S, self.V_dt, self.V_0, self.dS, 
                              self.dt),
-            ultima=np.nan)
+            'ultima':np.nan}
         
 @dataclass
 class OneFactorFiniteDifferencePricer: 
@@ -461,15 +460,16 @@ class MonteCarloGreeks:
         d = (self.dsigma*(self.Su-self.Sd)**2)
         return (self.V_sigma_u_S_u+self.V_sigma_u_S_d-2*self.V_sigma_u)/d
     
-    def greeks(self) -> OptionGreeks: 
-        return OptionGreeks(delta=self.delta(), vega=self.vega(), 
-                            theta=self.theta(), rho = self.rho(),
-                            epsilon=self.epsilon(),gamma = self.gamma(), 
-                            vanna = self.vanna(), charm = self.charm(), 
-                            veta = self.veta(), volga = self.volga(),
-                            vera=np.nan, speed = self.speed(), 
-                            zomma = self.zomma(), color = self.color(), 
-                            ultima=self.ultima()) 
+    def greeks(self) -> dict[str,float]: 
+        return {'delta':self.delta(), 'vega':self.vega(), 
+                'theta':self.theta(), 'rho' : self.rho(),
+                'epsilon':self.epsilon(),'gamma':self.gamma(), 
+                'vanna':self.vanna(), 'charm':self.charm(), 
+                'veta':self.veta(), 'volga':self.volga(),
+                'vera':np.nan, 'speed':self.speed(), 
+                'zomma':self.zomma(), 'color':self.color(), 
+                'ultima':self.ultima()} 
+
 
 @dataclass
 class MonteCarloLookback: 
@@ -487,7 +487,7 @@ class MonteCarloPricing:
     r : float
 
     def __post_init__(self): 
-        self.M, self.N = sim.shape[0], sim.shape[1]
+        self.M, self.N = self.sim.shape[0], self.sim.shape[1]
         self.option_steps = self.option.specification.get_steps(self.N)
     
     def lookback(self): 

@@ -69,7 +69,8 @@ class PDEBlackScholesValuation:
         return self.pricer.price()
     
     def greeks(self) -> OptionGreeks: 
-        return self.pricer.greeks()
+        g = self.pricer.greeks()
+        return OptionGreeks(**g)
     
     def valuation(self) -> OptionValuationResult: 
         return OptionValuationResult(
