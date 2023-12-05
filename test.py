@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt 
 from financialmath.instruments.option import *
 from dataclasses import dataclass
-from financialmath.pricing.option2.pde import PDEBlackScholesValuation
+from financialmath.pricing.option.pde import PDEBlackScholesValuation
 
 
 opt_payoff = OptionPayoff(
