@@ -476,9 +476,51 @@ class MonteCarloLookback:
     sim : np.array 
     option_steps : OptionSteps
     forward_start : bool 
-    lookback_strike : LookbackStrikeType
     look_back_method : LookbackMethod
     observation_type : ObservationType
+
+    def __post_init__(self): 
+        self.N = self.option_steps.N
+        self.step_vector = np.array(range(0,self.N,1))
+        self.fstart_step = self.option_steps.forward_start
+
+    def compute_lookback_method(self, vectors:np.array): 
+        match self.lookback_method: 
+            case LookbackMethod.geometric_mean: 
+                cumsum_exp = np.cumsum(np.exp(vectors), axis=1)
+                return np.log(cumsum_exp/self.step_vector)
+            case LookbackMethod.arithmetic_mean:
+                cumsum = np.cumsum(vectors, axis=1)
+                return cumsum/self.step_vector
+            case LookbackMethod.minimum:
+                return np.min(vectors,axis=1) 
+            case LookbackMethod.maximum: 
+                return np.max(vectors,axis=1) 
+    
+    def continuous_observation(self): 
+        if self.forward_start:sim = self.sim[:,self.fstart_step:self.N] 
+        else: sim = self.sim
+        return self.compute_lookback_method(sim)
+    
+    def window_observation(self): 
+        start = self.option_steps.lookback_window_begin
+        end = self.option_steps.lookback_window_end
+        if self.forward_start: 
+            n = self.N - self.fstart_step 
+            emptyvec = np.zeros((self.sim.shape[0], n))
+            emptyvec[:,0:(start-1)] = self.sim[:,self.fstart_step:start]
+        else: 
+            emptyvec = np.zeros(self.sim.shape)
+            emptyvec[:,0:(start-1)] = self.sim[:,0:start]
+        obssim = self.sim[:,start:end] 
+        lb = self.compute_lookback_method(obssim)
+        emptyvec[:,start:end] = lb 
+        emptyvec[:,(end+1):self.N] = emptyvec[:,end]
+
+        
+    
+
+
 
 @dataclass
 class MonteCarloPricing: 
@@ -489,10 +531,7 @@ class MonteCarloPricing:
     def __post_init__(self): 
         self.M, self.N = self.sim.shape[0], self.sim.shape[1]
         self.option_steps = self.option.specification.get_steps(self.N)
-    
-    def lookback(self): 
-        pass 
-    
+
     def barrier_up(self) -> np.array: 
         b_up = self.option.specification.barrier_up
         N, M = self.N, self.M
