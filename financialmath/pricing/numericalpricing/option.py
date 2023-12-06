@@ -521,7 +521,7 @@ class MonteCarloLookback:
         out = np.zeros(self.sim.shape)
         out[:,0:s] = self.sim[:,0:s]
         out[:,s:e] = self.compute_lookback_method(self.sim[:,s:e])
-        out[:,e:N] = self.vecrep_to_mat(out[:,e-1],self.M,N - e)
+        out[:,e:self.N] = self.vecrep_to_mat(out[:,e-1],self.M,self.N - e)
         if self.forward_start: return out[:,self.fstart_step:self.N]
         else: return out
     

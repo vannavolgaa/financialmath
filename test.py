@@ -8,9 +8,6 @@ from dataclasses import dataclass
 from financialmath.pricing.option.pde import PDEBlackScholesValuation
 import matplotlib.pyplot as plt
 
-a = []
-[b for b in a]
-a.sort()
 
 @dataclass
 class MonteCarloLookback: 

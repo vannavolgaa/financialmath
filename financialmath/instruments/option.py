@@ -89,7 +89,7 @@ class OptionPayoff:
         else: return True
     
     def is_lookback(self) -> bool: 
-        if lookback is None:return False
+        if self.lookback is None:return False
         else: return True
 
     def is_in_barrier(self) -> bool: 
@@ -140,8 +140,8 @@ class OptionTenor:
     def check(self, x) -> None: 
         if not np.isnan(x):
             if x<0: raise(NegativeTenorError())
-            if x>=self.expiry:raise(TenorConsistencyError())
-            if x<=self.forward_start: raise(TenorConsistencyError())
+            if x>=self.expiry:raise(ExpiryTenorError())
+            if x<=self.forward_start: raise(ForwardStartTenorError())
     
     def check_inconsistency_tenors(self) -> None: 
         check_list = [self.expiry, self.bermudan, self.barrier_discrete, 
@@ -210,7 +210,7 @@ class Option:
     payoff : OptionPayoff
     
     def __post_init__(self): 
-        self.payoff.check_lookback_conditions()<
+        self.payoff.check_lookback_conditions()
         self.specification.tenor.check_inconsistency_tenors() 
     
 @dataclass
