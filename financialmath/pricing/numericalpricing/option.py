@@ -8,7 +8,7 @@ from financialmath.instruments.option import *
 class OptionPayOffTool: 
     spot:np.array or float
     strike: np.array or float
-    barier_up: np.array or float
+    barrier_up: np.array or float
     barrier_down: np.array or float
     gap_trigger: np.array or float
     binary_amount: np.array or float
@@ -470,58 +470,83 @@ class MonteCarloGreeks:
                 'zomma':self.zomma(), 'color':self.color(), 
                 'ultima':self.ultima()} 
 
-
 @dataclass
 class MonteCarloLookback: 
     sim : np.array 
-    option_steps : OptionSteps
     forward_start : bool 
-    look_back_method : LookbackMethod
+    lookback_method : LookbackMethod
     observation_type : ObservationType
+    discrete_steps : List[int]
+    begin_window_step : int 
+    end_window_step : int
+    forward_start_step : int
+    
 
     def __post_init__(self): 
         self.N = self.option_steps.N
-        self.step_vector = np.array(range(0,self.N,1))
-        self.fstart_step = self.option_steps.forward_start
-
-    def compute_lookback_method(self, vectors:np.array): 
+        self.M = self.sim.shape[0]
+        self.fstart_step = self.forward_start_step
+    
+    @staticmethod
+    def progressive_npfun(vectors:np.array, fun:object) -> np.array: 
+        emptyvec = np.zeros(vectors.shape)
+        emptyvec[:,0] = vectors[:,0]
+        for i in range(1,emptyvec.shape[1]): 
+            emptyvec[:,i] = fun(vectors[:,0:i], axis=1)
+        return emptyvec
+    
+    @staticmethod
+    def vecrep_to_mat(vec:np.array, M:int, N:int) -> np.array: 
+        return np.reshape(np.repeat(vec, N), (M,N))
+    
+    def compute_lookback_method(self, vectors:np.array) -> np.array: 
         match self.lookback_method: 
             case LookbackMethod.geometric_mean: 
-                cumsum_exp = np.cumsum(np.exp(vectors), axis=1)
-                return np.log(cumsum_exp/self.step_vector)
+                return np.log(self.progressive_npfun(np.exp(vectors),np.mean))
             case LookbackMethod.arithmetic_mean:
-                cumsum = np.cumsum(vectors, axis=1)
-                return cumsum/self.step_vector
+                return self.progressive_npfun(vectors,np.mean) 
             case LookbackMethod.minimum:
-                return np.min(vectors,axis=1) 
+                return self.progressive_npfun(vectors,np.min) 
             case LookbackMethod.maximum: 
-                return np.max(vectors,axis=1) 
+                return self.progressive_npfun(vectors,np.max) 
     
-    def continuous_observation(self): 
+    def continuous_observation(self)-> np.array:
         if self.forward_start:sim = self.sim[:,self.fstart_step:self.N] 
         else: sim = self.sim
         return self.compute_lookback_method(sim)
     
-    def window_observation(self): 
-        start = self.option_steps.lookback_window_begin
-        end = self.option_steps.lookback_window_end
-        if self.forward_start: 
-            n = self.N - self.fstart_step 
-            emptyvec = np.zeros((self.sim.shape[0], n))
-            emptyvec[:,0:(start-1)] = self.sim[:,self.fstart_step:start]
-        else: 
-            emptyvec = np.zeros(self.sim.shape)
-            emptyvec[:,0:(start-1)] = self.sim[:,0:start]
-        obssim = self.sim[:,start:end] 
-        lb = self.compute_lookback_method(obssim)
-        emptyvec[:,start:end] = lb 
-        emptyvec[:,(end+1):self.N] = emptyvec[:,end]
-
-        
+    def window_observation(self) -> np.array: 
+        s = self.begin_window_step
+        e = self.end_window_step
+        out = np.zeros(self.sim.shape)
+        out[:,0:s] = self.sim[:,0:s]
+        out[:,s:e] = self.compute_lookback_method(self.sim[:,s:e])
+        out[:,e:N] = self.vecrep_to_mat(out[:,e-1],self.M,N - e)
+        if self.forward_start: return out[:,self.fstart_step:self.N]
+        else: return out
     
-
-
-
+    def discrete_observation(self) -> np.array: 
+        obs, N, M = self.discrete_steps, self.N, self.M
+        n_obs, lb = len(obs), self.compute_lookback_method(self.sim[:,obs])
+        out = np.zeros(self.sim.shape)
+        out[:,0:obs[0]] = self.sim[:,0:obs[0]]
+        for i in range(1,n_obs): 
+            n=obs[i]-obs[i-1]
+            out[:,obs[i-1]:obs[i]]=self.vecrep_to_mat(lb[:,i-1],M,n)
+        n = N - obs[n_obs-1]
+        out[:,obs[n_obs-1]:N] = self.vecrep_to_mat(lb[:,n_obs-1],self.M,n)
+        if self.forward_start: return out[:,self.fstart_step:self.N]
+        else: return out
+    
+    def compute(self) -> np.array: 
+        match self.observation_type: 
+            case ObservationType.continuous: 
+                return self.continuous_observation()
+            case ObservationType.discrete: 
+                return self.discrete_observation()
+            case ObservationType.window: 
+                return self.window_observation()
+       
 @dataclass
 class MonteCarloPricing: 
     sim : np.array 
@@ -531,73 +556,88 @@ class MonteCarloPricing:
     def __post_init__(self): 
         self.M, self.N = self.sim.shape[0], self.sim.shape[1]
         self.option_steps = self.option.specification.get_steps(self.N)
+        self.fstart_step = self.option_steps.forward_start
+        self.n_forward_start = self.N - self.fstart_step
 
-    def barrier_up(self) -> np.array: 
-        b_up = self.option.specification.barrier_up
-        N, M = self.N, self.M
+    def spot_simulation(self) -> np.array: 
         if self.option.payoff.forward_start: 
-            spot_forward_start = self.sim[:,self.option_steps.forward_start]
-            vec = b_up * spot_forward_start
-            n = N - self.option_steps.forward_start
-            return np.reshape(np.repeat(vec, n), (M,n)) 
-        else: return np.reshape(np.repeat(b_up,N*M), (M,N))  
+            return self.sim[:,self.fstart_step:self.N]
+        else: return self.sim
+    
+    def non_floating_param(self,param:float) -> np.array: 
+        N, M = self.N, self.M
+        n = self.n_forward_start
+        if self.option.payoff.forward_start: 
+            spot_forward_start = self.sim[:,self.fstart_step]
+            return np.reshape(np.repeat(param*spot_forward_start,n), (M,n)) 
+        else: return np.reshape(np.repeat(param,N*M), (M,N))  
+    
+    def barrier_up(self) -> np.array: 
+        return self.non_floating_param(self.option.specification.barrier_up)
     
     def barrier_down(self) -> np.array: 
-        b_down = self.option.specification.barrier_down
-        N, M = self.N, self.M
-        if self.option.payoff.forward_start: 
-            spot_forward_start = self.sim[:,self.option_steps.forward_start]
-            vec = b_down * spot_forward_start
-            n = N - self.option_steps.forward_start
-            return np.reshape(np.repeat(vec, n), (M,n)) 
-        else: return np.reshape(np.repeat(b_down,N*M), (M,N))   
+        return self.non_floating_param(self.option.specification.barrier_down)
     
     def gap(self) -> np.array: 
-        g = self.option.specification.gap_trigger
-        N, M = self.N, self.M
-        if self.option.payoff.forward_start: 
-            spot_forward_start = self.sim[:,self.option_steps.forward_start]
-            vec = g * spot_forward_start
-            n = N - self.option_steps.forward_start
-            return np.reshape(np.repeat(vec, n), (M,n)) 
-        else: return np.reshape(np.repeat(g,N*M), (M,N))    
+        return self.non_floating_param(self.option.specification.gap_trigger)  
     
     def rebate(self) -> np.array: 
-        rebate = self.option.specification.rebate
-        N, M = self.N, self.M
-        if self.option.payoff.forward_start: 
-            n = N - self.option_steps.forward_start
-            return np.reshape(np.repeat(rebate, n*M), (M,n)) 
-        else: return np.reshape(np.repeat(rebate,N*M), (M,N))     
+        return self.non_floating_param(self.option.specification.rebate)     
     
     def binary_amount(self) -> np.array: 
-        binary_amount = self.option.specification.binary_amount
-        N, M = self.N, self.M
-        if self.option.payoff.forward_start: 
-            n = N - self.option_steps.forward_start
-            return np.reshape(np.repeat(binary_amount, n*M), (M,n)) 
-        else:  return np.reshape(np.repeat(binary_amount,N*M), (M,N))     
+        return self.non_floating_param(self.option.specification.binary_amout)       
     
     def strike(self) -> int: 
         output = np.zeros((self.M, self.N))
+        K = self.option.specification.strike
         if self.option.payoff.is_lookback():
-            pass 
-        else: 
-            K = self.option.specification.strike
-            if self.option.payoff.forward_start: 
-                spot = self.sim[:,self.start_simulation()]
-                output[:,:] = K*spot
-            else: output[:,:] = K
-        return output
+            if self.option.payoff.lookback.floating_strike: 
+                lb = self.option.payoff.lookback
+                ostep = self.option_steps
+                lbmc =  MonteCarloLookback(
+                    sim=self.sim,
+                    forward_start=self.option.payoff.forward_start, 
+                    lookback_method=lb.strike_method, 
+                    observation_type=lb.strike_observation, 
+                    discrete_steps=ostep.strike_lookback_discrete, 
+                    begin_window_step=ostep.strike_lookback_window_begin, 
+                    end_window_step=ostep.strike_lookback_window_end, 
+                    forward_start_step=ostep.forward_start)
+                return lbmc.compute()
+            else: return self.non_floating_param(K)  
+        else: return self.non_floating_param(K)     
     
-    def gap(self) -> int: 
+    def spot(self) -> int: 
         output = np.zeros((self.M, self.N))
-        G = self.option.specification.gap_trigger
-        if self.option.payoff.forward_start: 
-            spot = self.sim[:,self.start_simulation()]
-            output[:,:] = G*spot
-        else: output[:,:] = G
-        return output
+        if self.option.payoff.is_lookback():
+            if self.option.payoff.lookback.floating_spot: 
+                lb = self.option.payoff.lookback
+                ostep = self.option_steps
+                lbmc =  MonteCarloLookback(
+                    sim=self.sim,
+                    forward_start=self.option.payoff.forward_start, 
+                    lookback_method=lb.spot_method, 
+                    observation_type=lb.spot_observation, 
+                    discrete_steps=ostep.spot_lookback_discrete, 
+                    begin_window_step=ostep.spot_lookback_window_begin, 
+                    end_window_step=ostep.spot_lookback_window_end, 
+                    forward_start_step=ostep.forward_start)
+                return lbmc.compute()
+            else: return self.spot_simulation()
+        else: return self.spot_simulation() 
+    
+    def compute_payoff(self): 
+        ptool = OptionPayOffTool(
+            spot = self.spot(), 
+            strike = self.strike(), 
+            barrier_up=self.barrier_up(), 
+            barrier_down=self.barrier_down(), 
+            gap_trigger=self.gap(), 
+            rebate=self.rebate(), 
+            binary_amount= self.binary_amount(), 
+            payoff = self.option.payoff)
+        return ptool.payoff_vector() 
+
     
 
 
