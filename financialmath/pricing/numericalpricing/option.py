@@ -588,7 +588,6 @@ class MonteCarloPricing:
         return self.non_floating_param(self.option.specification.binary_amout)       
     
     def strike(self) -> int: 
-        output = np.zeros((self.M, self.N))
         K = self.option.specification.strike
         if self.option.payoff.is_lookback():
             if self.option.payoff.lookback.floating_strike: 
@@ -608,7 +607,6 @@ class MonteCarloPricing:
         else: return self.non_floating_param(K)     
     
     def spot(self) -> int: 
-        output = np.zeros((self.M, self.N))
         if self.option.payoff.is_lookback():
             if self.option.payoff.lookback.floating_spot: 
                 lb = self.option.payoff.lookback
