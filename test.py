@@ -7,104 +7,32 @@ from financialmath.instruments.option import *
 from dataclasses import dataclass
 from financialmath.pricing.option.pde import PDEBlackScholesValuation
 import matplotlib.pyplot as plt
+from financialmath.pricing.numericalpricing.option import MonteCarloPricing
+import time
 
-
-@dataclass
-class MonteCarloLookback: 
-    sim : np.array 
-    option_steps : OptionSteps
-    forward_start : bool 
-    lookback_method : LookbackMethod
-    observation_type : ObservationType
-
-    def __post_init__(self): 
-        self.N = self.option_steps.N
-        self.M = self.sim.shape[0]
-        self.fstart_step = self.option_steps.forward_start
-    
-    @staticmethod
-    def progressive_npfun(vectors:np.array, fun:object) -> np.array: 
-        emptyvec = np.zeros(vectors.shape)
-        emptyvec[:,0] = vectors[:,0]
-        for i in range(1,emptyvec.shape[1]): 
-            emptyvec[:,i] = fun(vectors[:,0:i], axis=1)
-        return emptyvec
-    
-    @staticmethod
-    def vecrep_to_mat(vec:np.array, M:int, N:int) -> np.array: 
-        return np.reshape(np.repeat(vec, N), (M,N))
-    
-    def compute_lookback_method(self, vectors:np.array) -> np.array: 
-        match self.lookback_method: 
-            case LookbackMethod.geometric_mean: 
-                return np.log(self.progressive_npfun(np.exp(vectors),np.mean))
-            case LookbackMethod.arithmetic_mean:
-                return self.progressive_npfun(vectors,np.mean) 
-            case LookbackMethod.minimum:
-                return self.progressive_npfun(vectors,np.min) 
-            case LookbackMethod.maximum: 
-                return self.progressive_npfun(vectors,np.max) 
-    
-    def continuous_observation(self)-> np.array:
-        if self.forward_start:sim = self.sim[:,self.fstart_step:self.N] 
-        else: sim = self.sim
-        return self.compute_lookback_method(sim)
-    
-    def window_observation(self) -> np.array: 
-        s = self.option_steps.lookback_window_begin
-        e = self.option_steps.lookback_window_end
-        out = np.zeros(self.sim.shape)
-        out[:,0:s] = self.sim[:,0:s]
-        out[:,s:e] = self.compute_lookback_method(self.sim[:,s:e])
-        out[:,e:N] = self.vecrep_to_mat(out[:,e-1],self.M,N - e)
-        if self.forward_start: return out[:,self.fstart_step:self.N]
-        else: return out
-    
-    def discrete_observation(self) -> np.array: 
-        obs, N, M = self.option_steps.lookback_discrete, self.N, self.M
-        n_obs, lb = len(obs), self.compute_lookback_method(self.sim[:,obs])
-        out = np.zeros(self.sim.shape)
-        out[:,0:obs[0]] = self.sim[:,0:obs[0]]
-        for i in range(1,n_obs): 
-            n=obs[i]-obs[i-1]
-            out[:,obs[i-1]:obs[i]]=self.vecrep_to_mat(lb[:,i-1],M,n)
-        n = N - obs[n_obs-1]
-        out[:,obs[n_obs-1]:N] = self.vecrep_to_mat(lb[:,n_obs-1],self.M,n)
-        if self.forward_start: return out[:,self.fstart_step:self.N]
-        else: return out
-    
-    def compute(self) -> np.array: 
-        match self.observation_type: 
-            case ObservationType.continuous: 
-                return self.continuous_observation()
-            case ObservationType.discrete: 
-                return self.discrete_observation()
-            case ObservationType.window: 
-                return self.window_observation()
-
+lookback_payoff_floatK = LookBackPayoff(floating_strike=True, floating_spot=False, 
+                                 spot_method=None, strike_method=LookbackMethod.geometric_mean, 
+                                 spot_observation=None, strike_observation=ObservationType.continuous)
+lookback_payoff_floatS = LookBackPayoff(floating_strike=False, floating_spot=True, 
+                                 spot_method=LookbackMethod.geometric_mean, strike_method=None, 
+                                 spot_observation=ObservationType.continuous, strike_observation=None)
+bothfloat_lookback = LookBackPayoff(floating_strike=True, floating_spot=True, 
+                                 spot_method=LookbackMethod.geometric_mean, strike_method=LookbackMethod.arithmetic_mean, 
+                                 spot_observation=ObservationType.continuous, strike_observation=ObservationType.continuous)
 opt_payoff = OptionPayoff(
     option_type=OptionalityType.call,
-    exercise=ExerciseType.european, 
-    barrier_type=BarrierType.down_and_out, 
-    barrier_observation=ObservationType.continuous, forward_start=True)
-opt_spec = OptionSpecification(100, OptionTenor(expiry=1, forward_start=0.5), barrier_up=120, barrier_down=80, rebate=0)
+    exercise=ExerciseType.european)
+opt_spec = OptionSpecification(100, OptionTenor(expiry=1))
 option = Option(opt_spec, opt_payoff)
-
-
 S = 100 
 r = 0.01
 q = 0.1 
 t = 1 
 sigma = 0.2
-N = 500
-M = 3
+N = 100
+M = 50000
 dt = t/N
 Bu = 120 
-
-
-option_steps = option.specification.get_steps(N=N)
-
-option_steps.forward_start
 
 mcinput = MonteCarloBlackScholesInput(
     S=S, r=r,q=q,t=t,sigma=sigma,
@@ -112,31 +40,63 @@ mcinput = MonteCarloBlackScholesInput(
     number_steps=N,
     discretization=BlackScholesDiscretization.milstein,
     max_workers=1)
-
 bsmc = MonteCarloBlackScholes(inputdata=mcinput)
-test = bsmc.get(False,False,False)
-sim = test.sim
+simulator = bsmc.get(False,False,False)
+sim = simulator.sim
+test = MonteCarloPricing(sim=sim, option=option, r=r)
+payoffs = test.compute_payoff()
+
+pos = np.where(payoffs[:,N-2]>0)
+actual_payoff = payoffs[pos,N-2]
+Y = np.exp(-r*dt)*payoffs[pos[0],N-1]
+n_1_spot = sim[pos[0],N-2]
+n_1_spot_square =n_1_spot**2
+X = np.transpose(np.reshape(np.concatenate([n_1_spot, n_1_spot_square]),(2,len(pos[0]))))
+
+#xxt_inv = np.linalg.inv(np.dot(X, np.transpose(X)))
+
+test3 = np.linalg.lstsq(X, Y, rcond=None)[0]
+
+expected_payoff = np.transpose(X.dot(test3))
+
+@dataclass
+class MonteCarloLeastSquare: 
+    simulation : np.array 
+    volatility_matrix : np.array 
+    lookback_matrix : np.array
+    payoff_matrix : np.array 
+    dt : float 
+    r : float 
+    payoff : OptionPayoff
+    bermudan_steps : List[int]
+
+    @staticmethod
+    def coefficients(X, Y) -> np.array: 
+        return np.linalg.lstsq(X, Y, rcond=None)[0]
+
+    def continuation_payoff(self, discounted_payoff:np.array, spot: np.array, 
+                           volatility: np.array,pos: np.array, 
+                           look_back=None) -> np.array: 
+        Y, s, v = discounted_payoff[pos],spot[pos],volatility[pos]
+        if not look_back is None: 
+            lb = look_back[pos]
+            vec_list = [s, s**2,v, v**2, lb, lb**2]
+        else: vec_list = [s, s**2,v, v**2]
+        XT = np.reshape(np.concatenate(vec_list),(len(vec_list),len(pos)))
+        X = np.transpose(XT)
+        coefs = self.coefficients(X,Y)
+        return X.dot(coefs)
+    
+    def early_exercise(self, discounted_payoff:np.array, n:int) -> np.array: 
+        payoff_vector = self.payoff_matrix[:,n]
+        pos = np.where(payoff_vector>0)
+        spot, vol = self.simulation[pos,n], self.volatility_matrix[pos,n]
+        if self.payoff.is_lookback(): lb = self.lookback_matrix[pos,n]
+        else: lb=None
+        dpayoff = discounted_payoff[pos]
+        cpayoff = self.continuation_payoff(dpayoff,spot,vol)
+        
 
 
-steps = OptionSteps(
-    OptionTenor(
-    expiry=1, forward_start=0.3, 
-    lookback_window_begin=0.5, lookback_window_end=0.75, 
-    lookback_discrete = [0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.70,.75]), 
-    N = N)
 
-
-mclb = MonteCarloLookback(
-    sim = sim, 
-    option_steps=steps, 
-    forward_start=False, 
-    lookback_method=LookbackMethod.arithmetic_mean, 
-    observation_type=ObservationType.discrete
-)
-
-test = mclb.discrete_observation()
-
-plt.plot(np.transpose(test))
-#plt.plot(np.transpose(sim[:,steps.forward_start:steps.N]))
-plt.plot(np.transpose(sim))
-plt.show()
+    

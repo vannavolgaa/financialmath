@@ -133,7 +133,7 @@ class OptionTenor:
     strike_lookback_window_end  : float = np.nan 
     forward_start : float = np.nan 
     
-    def __post__init(self): 
+    def __post_init__(self): 
         self.bermudan.sort(), self.strike_lookback_discrete.sort()
         self.spot_lookback_discrete.sort(), self.barrier_discrete.sort()
     
@@ -209,9 +209,9 @@ class Option:
     specification : OptionSpecification 
     payoff : OptionPayoff
     
-    def __post_init__(self): 
-        self.payoff.check_lookback_conditions()
-        self.specification.tenor.check_inconsistency_tenors() 
+    #def __post_init__(self): 
+    #    self.payoff.check_lookback_conditions()
+    #    self.specification.tenor.check_inconsistency_tenors() 
     
 @dataclass
 class MarketOptionQuotes: 

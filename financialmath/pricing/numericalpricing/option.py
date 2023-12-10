@@ -55,7 +55,13 @@ class OptionPayOffTool:
             payoff = payoff * barrier_cond + rebate_payoff
         if self.payoff.binary: payoff = self.binary_payoff(payoff = payoff)
         return payoff
-
+    
+    def payoff_vector_no_barrier(self) -> np.array or float: 
+        if self.payoff.gap: payoff = self.gap_payoff()
+        else: payoff = self.vanilla_payoff()
+        if self.payoff.binary: payoff = self.binary_payoff(payoff = payoff)
+        return payoff
+     
 @dataclass
 class OneFactorOptionPriceGrids: 
     initial : np.array 
@@ -480,10 +486,9 @@ class MonteCarloLookback:
     begin_window_step : int 
     end_window_step : int
     forward_start_step : int
-    
 
     def __post_init__(self): 
-        self.N = self.option_steps.N
+        self.N = self.sim.shape[1]
         self.M = self.sim.shape[0]
         self.fstart_step = self.forward_start_step
     
@@ -502,7 +507,7 @@ class MonteCarloLookback:
     def compute_lookback_method(self, vectors:np.array) -> np.array: 
         match self.lookback_method: 
             case LookbackMethod.geometric_mean: 
-                return np.log(self.progressive_npfun(np.exp(vectors),np.mean))
+                return np.exp(self.progressive_npfun(np.log(vectors),np.mean))
             case LookbackMethod.arithmetic_mean:
                 return self.progressive_npfun(vectors,np.mean) 
             case LookbackMethod.minimum:
@@ -546,7 +551,7 @@ class MonteCarloLookback:
                 return self.discrete_observation()
             case ObservationType.window: 
                 return self.window_observation()
-       
+
 @dataclass
 class MonteCarloPricing: 
     sim : np.array 
@@ -624,17 +629,64 @@ class MonteCarloPricing:
             else: return self.spot_simulation()
         else: return self.spot_simulation() 
     
-    def compute_payoff(self): 
+    def is_check_barrier(self, i: int) -> bool: 
+        match self.option.payoff.barrier_observation: 
+            case ObservationType.in_fine: 
+                if i == self.option_steps.N: return True
+                else: return False 
+            case ObservationType.continuous: return True
+            case ObservationType.discrete: 
+                if i in self.discrete: return True
+                else: return False
+            case ObservationType.window: 
+                if i<=self.windowe and i>=self.windowb: return True
+                else: return False
+    
+    def check_barrier(self) -> np.array: 
         ptool = OptionPayOffTool(
-            spot = self.spot(), 
-            strike = self.strike(), 
+            spot = self.spot_simulation(), 
             barrier_up=self.barrier_up(), 
             barrier_down=self.barrier_down(), 
-            gap_trigger=self.gap(), 
             rebate=self.rebate(), 
-            binary_amount= self.binary_amount(), 
+            strike = np.nan, gap_trigger=np.nan,
+            binary_amount= np.nan, 
             payoff = self.option.payoff)
-        return ptool.payoff_vector() 
+        output = ptool.barrier_condition()
+        for i in range(1, output.shape[1]): 
+            if self.is_check_barrier(i): 
+                if self.option.payoff.is_out_barrier():
+                    output[:,i] = output[:,i]*output[:,i-1]
+                else: output[:,i] = np.minimum(output[:,i] + output[:,i-1], 1)
+            else: output[:,i] = output[:,i-1]
+        return output 
+    
+    def compute_payoff_without_barriers(self) -> np.array: 
+        ptool = OptionPayOffTool(
+            spot = self.spot(), strike=self.strike(), gap_trigger=self.gap(),
+            barrier_up=np.nan, barrier_down=np.nan, rebate=np.nan,
+            payoff = self.option.payoff, binary_amount=self.binary_amount()) 
+        return ptool.payoff_vector_no_barrier()
+
+    def compute_payoff(self) -> np.array: 
+        payoff = self.compute_payoff_without_barriers()
+        if self.option.payoff.is_barrier():
+            barrier_check = self.check_barrier()
+            if self.option.payoff.is_out_barrier():
+                rebate = self.rebate()
+            else: rebate = self.rebate()
+            payoff = barrier_check*payoff+rebate
+        return payoff
+    
+    def compute_price(self) -> float: 
+        payoff = self.compute_payoff()
+        t = self.option.specification.tenor.expiry
+        match self.option.payoff.exercise: 
+            case ExerciseType.european: 
+                vector = payoff[:, payoff.shape[1]-1]
+                return np.exp(-self.r*t)*np.mean(vector)
+
+        
+
 
     
 
