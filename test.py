@@ -7,7 +7,7 @@ from financialmath.instruments.option import *
 from dataclasses import dataclass
 from financialmath.pricing.option.pde import PDEBlackScholesValuation
 import matplotlib.pyplot as plt
-from financialmath.pricing.numericalpricing.option import MonteCarloPricing, MonteCarloLeastSquare, MonteCarloLeastSquareMethod
+from financialmath.pricing.numericalpricing.option.montecarlo import MonteCarloPricing, MonteCarloLeastSquare
 import time
 from enum import Enum
 
@@ -22,8 +22,8 @@ bothfloat_lookback = LookBackPayoff(floating_strike=True, floating_spot=True,
                                  spot_observation=ObservationType.continuous, strike_observation=ObservationType.continuous)
 opt_payoff = OptionPayoff(
     option_type=OptionalityType.call,
-    exercise=ExerciseType.european, forward_start=True, lookback=lookback_payoff_floatS)
-opt_spec = OptionSpecification(100, OptionTenor(expiry=1, bermudan=[0.5], forward_start=0.4), )
+    exercise=ExerciseType.european, forward_start=True)
+opt_spec = OptionSpecification(1, OptionTenor(expiry=1, bermudan=[0.5], forward_start=0.4))
 option = Option(opt_spec, opt_payoff)
 S = 100 
 r = 0.01
@@ -44,7 +44,9 @@ mcinput = MonteCarloBlackScholesInput(
 bsmc = MonteCarloBlackScholes(inputdata=mcinput)
 simulator = bsmc.get(False,False,False)
 sim = simulator.sim
+
 test = MonteCarloPricing(sim=sim, option=option, r=r)
+
 
 test.compute_price()
 

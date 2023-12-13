@@ -1,28 +1,39 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import List
-from financialmath.instruments.option import (Option, OptionPayoff, OptionalityType, 
-    ExerciseType)
+from typing import List, NamedTuple
+from financialmath.instruments.option import (
+    Option, 
+    OptionPayoff, 
+    OptionalityType, 
+    ExerciseType
+    )
 from financialmath.model.blackscholes.closedform import *
 from financialmath.tools.tool import MainTool
 from financialmath.pricing.schemas import OptionGreeks, OptionValuationResult
 
-@dataclass
-class BlackScholesParameters:
+class BlackScholesParameters(NamedTuple):
     S : float 
     r : float 
     q : float 
     sigma : float 
     
 class PayoffClosedFrom(Enum): 
-    european_vanilla_call = OptionPayoff(option_type=OptionalityType.call,
-                            exercise=ExerciseType.european) 
-    european_vanilla_put = OptionPayoff(option_type=OptionalityType.put, 
-                            exercise=ExerciseType.european)   
-    fut_european_vanilla_call = OptionPayoff(option_type=OptionalityType.call,
-                            exercise=ExerciseType.european, future=True) 
-    fut_european_vanilla_put = OptionPayoff(option_type=OptionalityType.put, 
-                            exercise=ExerciseType.european, future=True)
+    european_vanilla_call = OptionPayoff(
+        option_type=OptionalityType.call,
+        exercise=ExerciseType.european
+        ) 
+    european_vanilla_put = OptionPayoff(
+        option_type=OptionalityType.put, 
+        exercise=ExerciseType.european
+        )   
+    fut_european_vanilla_call = OptionPayoff(
+        option_type=OptionalityType.call,
+        exercise=ExerciseType.european, future=True
+        ) 
+    fut_european_vanilla_put = OptionPayoff(
+        option_type=OptionalityType.put, 
+        exercise=ExerciseType.european, future=True
+        )
 
     def find_payoff(payoff : OptionPayoff): 
         try : return [pcf for pcf in list(PayoffClosedFrom) 
@@ -44,7 +55,7 @@ class ValuationMethodClosedFormMapping(Enum):
 class ClosedFormBlackScholesPricer: 
     ids : List[int]
     payoff_type : PayoffClosedFrom
-    inputdata: BlackScholesInputData
+    inputdata: ClosedFormBlackScholesInput
 
     def __post_init__(self): 
         method = ValuationMethodClosedFormMapping.find_method(self.payoff_type)
@@ -82,16 +93,24 @@ class ClosedFormBlackScholesValuation:
         opt = [o for o,f in zip(self.option,pfilter) if f]
         param = [m for m,f in zip(self.parameters,pfilter) if f]
         ids = [i for i,f in zip(self.id_number,pfilter) if f]
-        inputdata = BlackScholesInputData(
-            S = np.array([p.S for p in param]),
-            sigma = np.array([p.sigma for p in param]),
-            r = np.array([p.r for p in param]),
-            q = np.array([p.q for p in param]),
-            K = np.array([o.specification.strike for o in opt]),
-            t = np.array([o.specification.tenor.expiry for o in opt]))
+        S = [p.S for p in param]
+        sigma = [p.sigma for p in param]
+        r = [p.r for p in param]
+        q = [p.q for p in param]
+        K = [o.specification.strike for o in opt]
+        t = [o.specification.tenor.expiry for o in opt]
         return ClosedFormBlackScholesPricer(
-            ids = ids, payoff_type=payoff_type, 
-            inputdata = inputdata)
+            ids = ids, 
+            payoff_type=payoff_type, 
+            inputdata = ClosedFormBlackScholesInput(
+                        S = np.array(S),
+                        sigma = np.array(sigma),
+                        r = np.array(r),
+                        q = np.array(q),
+                        K = np.array(K),
+                        t = np.array(t)
+                        )
+            )
     
     @staticmethod
     def read_numpy_array(x:np.array): 
@@ -140,15 +159,24 @@ class ClosedFormBlackScholesValuation:
         output = []
         for i in self.id_number:
             if i in list(prices.keys()): 
-                output.append(OptionValuationResult(
-                    self.option[i], self.parameters[i], 
-                    prices[i], greeks[i],
-                    self.method(),time_taken=0)) 
+                result = OptionValuationResult(
+                    instrument=self.option[i], 
+                    inputdata=self.parameters[i], 
+                    price=prices[i], 
+                    sensitivities=greeks[i],
+                    method=self.method(),
+                    time_taken=0
+                    )     
             else: 
-                output.append(OptionValuationResult(
-                    self.option[i], self.parameters[i], 
-                    np.nan, OptionGreeks(),
-                    self.method(),time_taken=0)) 
+                result = OptionValuationResult(
+                    instrument=self.option[i], 
+                    inputdata = self.parameters[i], 
+                    price = np.nan, 
+                    sensitivities=OptionGreeks(),
+                    method=self.method(),
+                    time_taken=0
+                    )
+            output.append(result)
         return output
 
 

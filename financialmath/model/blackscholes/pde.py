@@ -1,19 +1,17 @@
 from dataclasses import dataclass
 import numpy as np
-from typing import List
+from typing import List, NamedTuple
 from scipy import sparse
 import time
 from financialmath.tools.finitedifference import OneFactorImplicitScheme
 from financialmath.tools.tool import MainTool
-from financialmath.instruments.option import *
 
-@dataclass 
-class PDEBlackScholesInput: 
+class PDEBlackScholesInput(NamedTuple): 
     S : float 
     r : float 
     q : float 
     sigma : float 
-    t : float
+    t : float 
     number_steps : int = 400
     spot_vector_size : int = 100
     future : bool = False
@@ -22,7 +20,7 @@ class PDEBlackScholesInput:
     dr : float = 0.01 
     dq : float = 0.01 
     max_workers = 7 
-    
+
 @dataclass
 class PDEBlackScholesOutput: 
     grid_list : np.array 
@@ -66,25 +64,36 @@ class ImplicitBlackScholes:
         if self.future: r,q = 0,0
         u = (r-q-(sigma**2)/2)*dt/(2*dx)
         pu = self.df*(self.p + u)
-        return np.reshape(np.repeat(pu,self.M*self.N),(self.M,self.N)) 
+        return np.reshape(
+            a = np.repeat(pu,self.M*self.N),
+            newshape = (self.M,self.N)
+            ) 
 
     def down_move(self) -> float:
         sigma, dt, dx, r, q = self.sigma, self.dt, self.dx, self.r, self.q
         if self.future: r,q = 0,0
         d = (r-q-(sigma**2)/2)*dt/(2*dx)
         pd = self.df*(self.p - d)  
-        return np.reshape(np.repeat(pd,self.M*self.N),(self.M,self.N))  
+        return np.reshape(
+            a = np.repeat(pd,self.M*self.N),
+            newshape = (self.M,self.N)
+            )  
 
     def mid_move(self) -> float: 
         pm = self.df*(1-2*self.p)
-        return np.reshape(np.repeat(pm,self.M*self.N),(self.M,self.N)) 
+        return np.reshape(
+            a = np.repeat(pm,self.M*self.N),
+            newshape = (self.M,self.N)
+            ) 
     
     def transition_matrixes(self) -> List[sparse.csc_matrix]: 
         scheme = OneFactorImplicitScheme(
-            up_matrix=self.up_move(), 
-            down_matrix=self.down_move(), 
-            mid_matrix=self.mid_move(),
-            N = self.N, M=self.M)
+            up_matrix = self.up_move(), 
+            down_matrix = self.down_move(), 
+            mid_matrix = self.mid_move(),
+            N = self.N, 
+            M = self.M
+            )
         return scheme.transition_matrixes()
 
 class PDEBlackScholes: 
@@ -126,9 +135,15 @@ class PDEBlackScholes:
         -> dict[int,List[sparse.csc_matrix]]:
         r, q, sigma, id= arg[0], arg[1], arg[2], arg[3]
         scheme = ImplicitBlackScholes(
-            sigma,r,q,self.dx,
-            self.dt,self.M,self.N, 
-            self.inputdata.future)
+            sigma = sigma,
+            r = r,
+            q = q,
+            dx = self.dx,
+            dt = self.dt,
+            M = self.M,
+            N = self.N, 
+            future = self.inputdata.future
+            )
         return {id:scheme.transition_matrixes()}
     
     def args_fd_list(self, greek1:bool = True, 
@@ -153,8 +168,11 @@ class PDEBlackScholes:
     def get_matrixes(self,greek1:bool = True, greek2:bool = True, 
             greek3:bool = True) -> dict[int, np.array]: 
         args = self.args_fd_list(greek1,greek2,greek3)
-        matrixes = MainTool.send_task_with_futures(self.compute_matrixes,
-                    args, max_workers=self.inputdata.max_workers)
+        matrixes = MainTool.send_task_with_futures(
+            task = self.compute_matrixes,
+            args = args, 
+            max_workers=self.inputdata.max_workers
+            )
         return MainTool.listdict_to_dictlist(matrixes)
     
     def get(self, first_order_greek:bool = True, 
@@ -163,15 +181,18 @@ class PDEBlackScholes:
         matrixes = self.get_matrixes(first_order_greek, 
                                      second_order_greek, 
                                      third_order_greek)
-        end = time.time()
         output = PDEBlackScholesOutput(
             grid_list = matrixes[0], 
             t_vector=self.t_vector(), 
             step_vector=self.step_vector(),
             spot_vector=self.spot_vector(),
-            time_taken=end-self.start, 
-            dS = self.dS, dsigma = self.ds, 
-            dt = self.dt, dr = self.dr, dq=self.dq)
+            time_taken=time.time()-self.start, 
+            dS = self.dS, 
+            dsigma = self.ds, 
+            dt = self.dt, 
+            dr = self.dr, 
+            dq=self.dq
+            )
         if first_order_greek: 
             output.grid_list_sigma_up = matrixes[3] 
             output.grid_list_r_up = matrixes[1] 

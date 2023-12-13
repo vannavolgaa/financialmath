@@ -138,7 +138,8 @@ class StochasticVolatilityInspired:
             slope_call_wing=self.slope_call_wing, 
             slope_put_wing=self.slope_put_wing, 
             min_variance=self.min_variance, 
-            t = self.t)
+            t = self.t
+            )
         self.a = self.tool.a
         self.b = self.tool.b
         self.m = self.tool.m 

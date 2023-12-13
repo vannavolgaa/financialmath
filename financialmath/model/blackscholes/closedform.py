@@ -1,11 +1,9 @@
 import numpy as np
-from scipy.stats import norm
-from typing import List
 from dataclasses import dataclass
 from financialmath.tools.probability import NormalDistribution
 
 @dataclass 
-class BlackScholesInputData: 
+class ClosedFormBlackScholesInput: 
     S : float or np.array
     r : float or np.array
     q : float or np.array
@@ -23,7 +21,7 @@ class BlackScholesInputData:
 
 class BlackScholesEuropeanVanillaCall: 
 
-    def __init__(self, inputdata:BlackScholesInputData):
+    def __init__(self, inputdata:ClosedFormBlackScholesInput):
         self.S, self.K, self.q, self.r, self.t, self.sigma = inputdata.S,\
              inputdata.K,inputdata.q,inputdata.r,inputdata.t,inputdata.sigma
         self.d1 = inputdata.d1()
@@ -166,7 +164,7 @@ class BlackScholesEuropeanVanillaCall:
     
 class BlackScholesEuropeanVanillaPut: 
 
-    def __init__(self, inputdata:BlackScholesInputData):
+    def __init__(self, inputdata:ClosedFormBlackScholesInput):
         self.S, self.K, self.q, self.r, self.t, self.sigma = inputdata.S,\
              inputdata.K,inputdata.q,inputdata.r,inputdata.t,inputdata.sigma
         self.d1 = inputdata.d1()
@@ -270,13 +268,17 @@ class BlackScholesEuropeanVanillaPut:
  
 class BlackEuropeanVanillaCall: 
 
-    def __init__(self, inputdata:BlackScholesInputData):
+    def __init__(self, inputdata:ClosedFormBlackScholesInput):
         self.F, self.K, self.r, self.t, self.sigma = inputdata.S,\
              inputdata.K,inputdata.r,inputdata.t,inputdata.sigma
         self.df = np.exp(-self.r*self.t) 
-        dbs = BlackScholesInputData(
-            S=self.F,r=0,q=0,t=self.t,
-            sigma=self.sigma,K=self.K)
+        dbs = ClosedFormBlackScholesInput(
+            S = self.F,
+            r = 0,
+            q = 0,
+            t = self.t,
+            sigma = self.sigma,
+            K = self.K)
         self.bs = BlackScholesEuropeanVanillaCall(dbs) 
     
     def get_max_length_param(self) -> int: 
@@ -337,13 +339,17 @@ class BlackEuropeanVanillaCall:
  
 class BlackEuropeanVanillaPut: 
 
-    def __init__(self, inputdata:BlackScholesInputData):
+    def __init__(self, inputdata:ClosedFormBlackScholesInput):
         self.F, self.K, self.r, self.t, self.sigma = inputdata.S,\
              inputdata.K,inputdata.r,inputdata.t,inputdata.sigma
         self.df = np.exp(-self.r*self.t) 
-        dbs = BlackScholesInputData(
-            S=self.F,r=0,q=0,t=self.t,
-            sigma=self.sigma,K=self.K)
+        dbs = ClosedFormBlackScholesInput(
+            S = self.F,
+            r = 0,
+            q = 0,
+            t = self.t,
+            sigma = self.sigma,
+            K = self.K)
         self.bs = BlackScholesEuropeanVanillaPut(dbs) 
     
     def get_max_length_param(self) -> int: 

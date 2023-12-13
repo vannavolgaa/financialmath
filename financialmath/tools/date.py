@@ -47,7 +47,6 @@ class DayCountConvention(Enum):
     thirtyE_360_isda = '30E/360 ISDA'
     one_for_one = '1/1'
 
-@dataclass
 class DateTool: 
 
     @staticmethod
@@ -76,10 +75,10 @@ class DateTool:
     @staticmethod
     def range_of_business_dates(from_date:datetime, to_date:datetime, 
                                 holiday : dict) -> List[datetime]: 
-        f, t = from_date, to_date
         dates_range = DateTool.range_of_dates(
             from_date=from_date, 
-            to_date=to_date)
+            to_date=to_date
+            )
         return [d for d in dates_range if d in holiday]
     
     @staticmethod

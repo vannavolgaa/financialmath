@@ -1,6 +1,6 @@
 from enum import Enum
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import List
 import math
 import numpy as np 
 from financialmath.instruments.errors import *
@@ -58,15 +58,7 @@ class OptionPayoff:
     barrier_type : BarrierType = None
     barrier_observation : ObservationType = None
     lookback : LookBackPayoff = None 
-    
-    def check_lookback_conditions(self) -> None: 
-        p = self.payoff
-        if self.is_lookback(): 
-            if self.lookback.spot_observation is ObservationType.in_fine: 
-                raise LookBackOptionError()
-            if self.lookback.strike_observation is ObservationType.in_fine: 
-                raise LookBackOptionError()
-    
+
     def get_opposite_barrier(self) -> BarrierType: 
         match self.barrier_type: 
             case BarrierType.up_and_in: 
@@ -134,27 +126,11 @@ class OptionTenor:
     forward_start : float = np.nan 
     
     def __post_init__(self): 
-        self.bermudan.sort(), self.strike_lookback_discrete.sort()
-        self.spot_lookback_discrete.sort(), self.barrier_discrete.sort()
-    
-    def check(self, x) -> None: 
-        if not np.isnan(x):
-            if x<0: raise(NegativeTenorError())
-            if x>=self.expiry:raise(ExpiryTenorError())
-            if x<=self.forward_start: raise(ForwardStartTenorError())
-    
-    def check_inconsistency_tenors(self) -> None: 
-        check_list = [self.expiry, self.bermudan, self.barrier_discrete, 
-                      self.spot_lookback_discrete, 
-                      self.spot_lookback_window_begin, 
-                      self.spot_lookback_window_end, self.barrier_window_begin, 
-                      self.barrier_window_end, self.strike_lookback_discrete, 
-                      self.strike_lookback_window_begin, 
-                      self.strike_lookback_window_end, self.forward_start]
-        for cl in check_list: 
-            if isinstance(cl, list): [self.check(c) for c in cl]
-            else: self.check(cl)
-                
+        self.bermudan.sort() 
+        self.strike_lookback_discrete.sort()
+        self.spot_lookback_discrete.sort()
+        self.barrier_discrete.sort()
+      
 @dataclass
 class OptionSteps:
     tenor : OptionTenor 
@@ -208,10 +184,7 @@ class OptionSpecification:
 class Option: 
     specification : OptionSpecification 
     payoff : OptionPayoff
-    
-    #def __post_init__(self): 
-    #    self.payoff.check_lookback_conditions()
-    #    self.specification.tenor.check_inconsistency_tenors() 
+
     
 @dataclass
 class MarketOptionQuotes: 
