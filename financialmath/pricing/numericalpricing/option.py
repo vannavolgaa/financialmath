@@ -553,16 +553,107 @@ class MonteCarloLookback:
                 return self.window_observation()
 
 @dataclass
+class MonteCarloLeastSquare: 
+    simulation : np.array 
+    payoff_matrix : np.array 
+    dt : float 
+    r : float 
+    option: Option
+    option_steps : OptionSteps
+    volatility_matrix : np.array = None 
+    spot_lookback_matrix : np.array = None 
+    strike_lookback_matrix : np.array = None 
+        
+    def __post_init__(self):
+        self.N = self.option_steps.N
+        self.NN = self.payoff_matrix.shape[1] 
+        self.bermudan_steps = self.option_steps.bermudan
+        self.fstart_step = self.option_steps.forward_start
+
+    @staticmethod
+    def coefficients(X, Y) -> np.array: 
+        return np.linalg.lstsq(X, Y, rcond=None)[0]
+    
+    @staticmethod
+    def filter_matrix(mat:np.array, i:int, indexes:np.array) -> np.array: 
+        try : return mat[indexes, i]
+        except Exception as e: pass 
+    
+    def get_x_matrix(self, i:int, indexes:np.array) -> np.array: 
+        n = len(indexes)
+        vol = self.filter_matrix(self.volatility_matrix, i, indexes)
+        spot = self.filter_matrix(self.simulation, i, indexes)
+        spotlb = self.filter_matrix(self.spot_lookback_matrix, i, indexes)
+        strikelb = self.filter_matrix(self.strike_lookback_matrix, i, indexes)
+        ones = np.ones(n)
+        xlist = [ones]
+        for v in [spot, vol, spotlb, strikelb]: 
+            if v is not None: 
+                xlist.append(v)
+                xlist.append(v**2)
+            else: continue
+        return np.transpose(np.reshape(np.concatenate(xlist),(len(xlist),n)))
+    
+    def compute_continuation_payoff(self, discounted_payoff:np.array, 
+                                    i:int, indexes:np.array) -> np.array:
+        n = len(indexes)
+        Y, output = discounted_payoff[indexes],np.zeros(len(discounted_payoff))
+        X = self.get_x_matrix(i=i, indexes=indexes) 
+        cpayoff = np.transpose(X.dot(self.coefficients(X=X, Y=Y)))
+        output[indexes] = cpayoff
+        return output
+    
+    def early_exercise_payoff(self, step_range:range) -> np.array: 
+        payoff, old_i = self.payoff_matrix[:,self.NN-1], self.NN
+        for i in step_range: 
+            df = np.exp((old_i-i)*self.dt*-self.r)
+            old_i = i 
+            discounted_payoff = df*payoff
+            actual_payoff = self.payoff_matrix[:,i]
+            indexes = np.where(actual_payoff>0)[0]
+            continuation_payoff = self.compute_continuation_payoff(
+                discounted_payoff=discounted_payoff, 
+                i=i, indexes=indexes)
+            exercise_indexes = actual_payoff>continuation_payoff
+            no_exercise_indexes = np.invert(exercise_indexes)
+            payoff[exercise_indexes] = actual_payoff[exercise_indexes]
+            payoff[no_exercise_indexes] = discounted_payoff[no_exercise_indexes]
+        df = np.exp(-self.r*i*self.dt)
+        return df*payoff 
+    
+    def get_range(self) -> List[int]: 
+        match self.option.payoff.exercise: 
+            case ExerciseType.american: 
+                return list(range(self.NN-2,-1,-1))
+            case ExerciseType.bermudan:
+                steps = self.bermudan_steps
+                diff = self.N - self.NN
+                return [s - diff for s in steps]                
+            
+    def price(self) -> float: 
+        payoff = self.early_exercise_payoff(self.get_range())
+        price = np.mean(payoff)
+        if self.option.payoff.forward_start: 
+            df = np.exp(-self.r*self.option_steps.forward_start*self.dt)
+            return df*price
+        else: return price
+    
+@dataclass
 class MonteCarloPricing: 
     sim : np.array 
     option : Option 
     r : float
+    volatility_matrix : np.array = None 
 
     def __post_init__(self): 
         self.M, self.N = self.sim.shape[0], self.sim.shape[1]
         self.option_steps = self.option.specification.get_steps(self.N)
         self.fstart_step = self.option_steps.forward_start
         self.n_forward_start = self.N - self.fstart_step
+        self.t = self.option.specification.tenor.expiry
+        self.dt = self.t/self.N
+        self.spot_matrix = self.spot()
+        self.strike_matrix = self.strike()
 
     def spot_simulation(self) -> np.array: 
         if self.option.payoff.forward_start: 
@@ -662,8 +753,9 @@ class MonteCarloPricing:
     
     def compute_payoff_without_barriers(self) -> np.array: 
         ptool = OptionPayOffTool(
-            spot = self.spot(), strike=self.strike(), gap_trigger=self.gap(),
-            barrier_up=np.nan, barrier_down=np.nan, rebate=np.nan,
+            spot = self.spot_matrix, strike=self.strike_matrix, 
+            gap_trigger=self.gap(),barrier_up=np.nan, 
+            barrier_down=np.nan, rebate=np.nan,
             payoff = self.option.payoff, binary_amount=self.binary_amount()) 
         return ptool.payoff_vector_no_barrier()
 
@@ -677,13 +769,37 @@ class MonteCarloPricing:
             payoff = barrier_check*payoff+rebate
         return payoff
     
-    def compute_price(self) -> float: 
-        payoff = self.compute_payoff()
-        t = self.option.specification.tenor.expiry
+    def least_square_object(self) -> MonteCarloLeastSquare: 
+        mcls = MonteCarloLeastSquare(
+            simulation=self.sim, 
+            payoff_matrix=self.compute_payoff(), 
+            dt=self.dt, 
+            r=self.r, 
+            option=self.option, 
+            option_steps=self.option_steps, 
+            spot_lookback_matrix=None, 
+            strike_lookback_matrix=None, 
+            volatility_matrix=self.volatility_matrix)
+        if self.option.payoff.is_lookback():
+            if self.option.payoff.lookback.floating_spot: 
+                mcls.spot_lookback_matrix=self.spot_matrix
+            if self.option.payoff.lookback.floating_strike: 
+                mcls.spot_lookback_matrix=self.strike_matrix
+        return mcls
+    
+    def compute_price(self) -> float:       
         match self.option.payoff.exercise: 
             case ExerciseType.european: 
+                payoff = self.compute_payoff()
                 vector = payoff[:, payoff.shape[1]-1]
-                return np.exp(-self.r*t)*np.mean(vector)
+                return np.exp(-self.r*self.t)*np.mean(vector)
+            case ExerciseType.american: 
+                mcls = self.least_square_object()
+                return mcls.price() 
+            case ExerciseType.bermudan: 
+                mcls = self.least_square_object()
+                return mcls.price()  
+        
 
         
 
