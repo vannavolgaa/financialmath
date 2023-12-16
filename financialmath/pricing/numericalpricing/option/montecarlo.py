@@ -10,125 +10,6 @@ from financialmath.instruments.option import (
 from financialmath.pricing.schemas import OptionPayOffTool
 
 @dataclass
-class MonteCarloGreeks: 
-    S: float 
-    # deltas
-    dS : float 
-    dsigma : float 
-    dt : float 
-    dr : float 
-    dq : float 
-
-    #first order 
-    V : float 
-    V_S_u : float = np.nan 
-    V_sigma_u : float = np.nan
-    V_t_u : float = np.nan
-    V_r_u : float = np.nan
-    V_q_u : float = np.nan
-
-    #second order 
-    V_sigma_d : float = np.nan
-    V_sigma_u_S_u : float = np.nan
-    V_sigma_u_S_d : float = np.nan
-    V_S_d : float = np.nan
-    V_t_u_S_u : float = np.nan
-    V_t_u_S_d : float = np.nan
-    V_t_u_sigma_u : float = np.nan
-    V_t_u_sigma_d : float= np.nan
-    
-    #third order 
-    V_S_dd : float = np.nan
-    V_S_uu : float = np.nan
-    V_sigma_uu : float = np.nan
-    V_sigma_dd : float = np.nan
-    
-    def __post_init__(self): 
-        self.Su = self.S*(1+self.dS)
-        self.Suu = self.S*(1+self.dS)**2
-        self.Sdd = self.S*(1-self.dS)**2
-        self.Sd = self.S*(1-self.dS)
-        
-
-    def price(self): 
-        return self.V
-
-    #first order
-    def delta(self): 
-        return (self.V_S_u-self.V)/(self.Su-self.S)
-    
-    def vega(self): 
-        return (self.V_sigma_u-self.V)/self.dsigma 
-    
-    def theta(self): 
-        return (self.V_t_u-self.V)/-self.dt
-
-    def rho(self): 
-        return (self.V_r_u-self.V)/self.dr
-
-    def epsilon(self): 
-        return (self.V_q_u-self.V)/self.dq
-    
-    # second order   
-    def gamma(self): 
-        return (self.V_S_u+self.V_S_d-2*self.V)/((100*self.dS)**2)
-    
-    def volga(self): 
-        return (self.V_sigma_u+self.V_sigma_d-2*self.V)/(2*self.dsigma) 
-    
-    def vanna(self): 
-        delta_up = (self.V_sigma_u_S_u-self.V)/(self.Su-self.S)
-        delta_down = (self.V-self.V_sigma_u_S_d)/(self.S-self.Sd)
-        return (delta_up-delta_down)/self.dsigma
-    
-    def charm(self): 
-        delta_up = (self.V_t_u_S_u-self.V)/(self.Su-self.S)
-        delta_down = (self.V-self.V_t_u_S_d)/(self.S-self.Sd)
-        return (delta_up-delta_down)/-self.dt 
-
-    def veta(self): 
-        vega_up = (self.V_t_u_sigma_u-self.V)/self.dsigma 
-        vega_down = (self.V-self.V_t_u_sigma_d)/self.dsigma 
-        return (vega_up-vega_down)/-self.dt
-
-    #third order
-    def speed(self): 
-        delta_up = (self.V_S_u-self.V)/(self.Su-self.S)
-        delta_down = (self.V-self.V_S_d)/(self.S-self.Sd)
-        delta_uu = (self.V_S_uu-self.V_S_u)/(self.Suu-self.Su)
-        delta_dd = (self.V_S_d - self.V_S_dd)/(self.Sd-self.Sdd)
-        gamma_up = (delta_uu - delta_up)/(self.Suu-self.Su)
-        gamma_down = (delta_down - delta_dd)/(self.Sd-self.Sdd)
-        return (gamma_up-gamma_down)/(self.Su-self.Sd)
-    
-    def ultima(self): 
-        vega_up = (self.V_sigma_u-self.V)/self.dsigma
-        vega_down = (self.V-self.V_sigma_d)/self.dsigma
-        vega_uu = (self.V_sigma_uu-self.V_sigma_u)/self.dsigma
-        vega_dd = (self.V_sigma_d - self.V_sigma_dd)/self.dsigma
-        volga_up = (vega_uu - vega_up)/self.dsigma
-        volga_down = (vega_down - vega_dd)/self.dsigma
-        return (volga_up-volga_down)/self.dsigma
-
-    def color(self): 
-        d = (self.dt*(self.Su-self.Sd)**2)
-        return (self.V_t_u_S_u+self.V_t_u_S_d-2*self.V_t_u)/d
-
-    def zomma(self): 
-        d = (self.dsigma*(self.Su-self.Sd)**2)
-        return (self.V_sigma_u_S_u+self.V_sigma_u_S_d-2*self.V_sigma_u)/d
-    
-    def greeks(self) -> dict[str,float]: 
-        return {'delta':self.delta(), 'vega':self.vega(), 
-                'theta':self.theta(), 'rho' : self.rho(),
-                'epsilon':self.epsilon(),'gamma':self.gamma(), 
-                'vanna':self.vanna(), 'charm':self.charm(), 
-                'veta':self.veta(), 'volga':self.volga(),
-                'vera':np.nan, 'speed':self.speed(), 
-                'zomma':self.zomma(), 'color':self.color(), 
-                'ultima':self.ultima()} 
-
-@dataclass
 class MonteCarloLookback: 
     sim : np.array 
     forward_start : bool 
@@ -237,8 +118,7 @@ class MonteCarloLeastSquare:
         spot = self.filter_matrix(self.simulation, i, indexes)
         spotlb = self.filter_matrix(self.spot_lookback_matrix, i, indexes)
         strikelb = self.filter_matrix(self.strike_lookback_matrix, i, indexes)
-        ones = np.ones(n)
-        xlist = [ones]
+        xlist = [np.ones(n)]
         for v in [spot, vol, spotlb, strikelb]: 
             if v is not None: 
                 xlist.append(v)
@@ -248,10 +128,10 @@ class MonteCarloLeastSquare:
     
     def compute_continuation_payoff(self, discounted_payoff:np.array, 
                                     i:int, indexes:np.array) -> np.array:
-        n = len(indexes)
         Y, output = discounted_payoff[indexes],np.zeros(len(discounted_payoff))
         X = self.get_x_matrix(i=i, indexes=indexes) 
-        cpayoff = np.transpose(X.dot(self.coefficients(X=X, Y=Y)))
+        coefs = self.coefficients(X=X, Y=Y)
+        cpayoff = np.transpose(X.dot(coefs))
         output[indexes] = cpayoff
         return output
     
@@ -291,7 +171,7 @@ class MonteCarloLeastSquare:
         else: return price
     
 @dataclass
-class MonteCarloPricing: 
+class MonteCarloPrice: 
     sim : np.array 
     option : Option 
     r : float
@@ -465,6 +345,100 @@ class MonteCarloPricing:
             case ExerciseType.bermudan: 
                 mcls = self.least_square_object()
                 return mcls.price()  
-        
+
+@dataclass
+class MonteCarloPricing: 
+    initial : float #
+    S_up : float #
+    r_up : float #
+    q_up : float #
+    sigma_up : float #
+    t_up : float #
+    S_down : float #
+    sigma_down : float #
+    S_up_sigma_up : float #
+    S_down_sigma_up : float
+    S_up_t_up : float #
+    S_down_t_up : float 
+    sigma_up_t_up : float #
+    sigma_down_t_up : float
+    S_uu : float
+    S_dd : float
+    sigma_uu : float
+    sigma_dd : float
+    S_uuu : float
+    S_ddd : float
+
+    def price(self) -> float: 
+        return self.initial
+    
+    def delta(self, dS:float) -> float: 
+        return (self.S_up-self.initial)/dS
+    
+    def vega(self, dsigma:float) -> float: 
+        return (self.sigma_up-self.initial)/dsigma 
+    
+    def theta(self, dt:float) -> float: 
+        return (self.t_up-self.initial)/-dt
+
+    def rho(self, dr:float) -> float: 
+        return (self.r_up-self.initial)/dr
+
+    def epsilon(self, dq:float) -> float: 
+        return (self.q_up-self.initial)/dq
+    
+    def gamma(self, dS:float) -> float: 
+        return (self.S_up+self.S_down-2*self.initial)/(dS**2)
+    
+    def volga(self, dsigma:float) -> float: 
+        return (self.sigma_up+self.sigma_down-2*self.initial)/(dsigma**2) 
+    
+    def vanna(self, dS:float, dsigma:float) -> float: 
+        delta_up = (self.S_up_sigma_up-self.sigma_up)/dS
+        delta = self.delta(dS=dS)
+        return (delta_up-delta)/dsigma
+    
+    def charm(self, dS:float, dt:float) -> float: 
+        delta_up = (self.S_up_t_up-self.t_up)/dS
+        delta = self.delta(dS=dS)
+        return (delta_up-delta)/-dt 
+
+    def veta(self, dt:float, dsigma:float) -> float:  
+        vega_up = (self.sigma_up_t_up-self.t_up)/dsigma 
+        vega = self.vega(dsigma = dsigma)
+        return (vega_up-vega)/-dt
+    
+    def speed(self, dS: float) -> float: 
+        return np.nan
+    
+    def ultima(self, dsigma:float) -> float: 
+        return np.nan
+
+    def color(self,dS: float, dt:float) -> float: 
+        return np.nan
+
+    def zomma(self, dS: float, dsigma:float) -> float: 
+        return np.nan
+    
+    def greeks(self, dS: float, dr:float, dq:float, dsigma: float,
+               dt : float) -> dict[str,float]: 
+        return {'delta':self.delta(dS=dS), 
+                'vega':self.vega(dsigma=dsigma), 
+                'theta':self.theta(dt=dt), 
+                'rho' : self.rho(dr=dr),
+                'epsilon':self.epsilon(dq=dq),
+                'gamma':self.gamma(dS=dS), 
+                'vanna':self.vanna(dS=dS, dsigma=dsigma), 
+                'charm':self.charm(dS=dS, dt=dt), 
+                'veta':self.veta(dt=dt, dsigma=dsigma), 
+                'volga':self.volga(dsigma=dsigma),
+                'vera':np.nan, 
+                'speed':self.speed(dS=dS), 
+                'zomma':self.zomma(dS=dS,dsigma=dsigma), 
+                'color':self.color(dS=dS, dt=dt), 
+                'ultima':self.ultima(dsigma=dsigma)} 
+    
+
+
 
         

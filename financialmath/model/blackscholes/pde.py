@@ -3,45 +3,12 @@ import numpy as np
 from typing import List, NamedTuple
 from scipy import sparse
 import time
+from enum import Enum
 from financialmath.tools.finitedifference import OneFactorImplicitScheme
 from financialmath.tools.tool import MainTool
 
-class PDEBlackScholesInput(NamedTuple): 
-    S : float 
-    r : float 
-    q : float 
-    sigma : float 
-    t : float 
-    number_steps : int = 400
-    spot_vector_size : int = 100
-    future : bool = False
-    dS : float = 0.01 
-    dsigma : float = 0.01 
-    dr : float = 0.01 
-    dq : float = 0.01 
-    max_workers = 7 
-
-@dataclass
-class PDEBlackScholesOutput: 
-    grid_list : np.array 
-    spot_vector : np.array
-    step_vector : np.array 
-    t_vector : np.array 
-    time_taken : float
-    grid_list_sigma_up : np.array = None
-    grid_list_sigma_down : np.array = None
-    grid_list_r_up : np.array = None
-    grid_list_q_up : np.array = None
-    grid_list_sigma_uu : np.array = None 
-    grid_list_sigma_dd : np.array = None
-    dS : float = 0.01
-    dsigma : float = 0.01
-    dr : float = 0.01 
-    dq : float = 0.01 
-    dt : float = 0.01
-    
 @dataclass 
-class ImplicitBlackScholes: 
+class PDEImplicitBlackScholes: 
     sigma : float 
     r : float 
     q : float 
@@ -96,6 +63,83 @@ class ImplicitBlackScholes:
             )
         return scheme.transition_matrixes()
 
+class PDEBlackScholesParameterMapping(Enum): 
+    initial = 0 
+    r_up = 1
+    q_up = 2
+    sigma_up = 3
+    sigma_down = 4
+    sigma_uu = 5
+    sigma_dd = 6
+
+@dataclass
+class PDEBlackScholesMatrixes: 
+    initial : np.array 
+    r_up : np.array = None
+    q_up : np.array = None
+    sigma_up : np.array = None
+    sigma_down : np.array = None
+    sigma_uu : np.array = None
+    sigma_dd : np.array = None
+
+@dataclass
+class PDEBlackScholesInput: 
+    S : float 
+    r : float 
+    q : float 
+    sigma : float 
+    t : float 
+    number_steps : int = 400
+    spot_vector_size : int = 100
+    future : bool = False
+    dS : float = 0.01 
+    dsigma : float = 0.01 
+    dr : float = 0.01 
+    dq : float = 0.01 
+    max_workers : int = 7 
+
+    first_order_greek_id_list = [1,2,3]
+    second_order_greek_id_list = [4,5]
+    third_order_greek_id_list = [6,7]
+
+    def parameters_definition(self): 
+        s, ds, r, q, dr, dq= self.sigma, self.dsigma,self.r,\
+            self.q,self.dr, self.dq
+        return [(r, q, s, 0),
+                (r+dr, q, s, 1), 
+                (r, q+dq, s, 2),
+                (r, q, s+ds, 3),
+                (r, q, s-ds, 4), 
+                (r, q, s-2*ds, 5), 
+                (r, q, s+2*ds, 6)] 
+
+    def get_ids(self, greek1: bool, greek2:bool, greek3:bool) -> List[int]: 
+        output = [0]
+        if greek1: 
+            output = output + self.first_order_greek_id_list 
+            if greek2: 
+                output = output + self.second_order_greek_id_list 
+                if greek3: 
+                    output = output + self.third_order_greek_id_list 
+        return output
+    
+    def get_pde_parameters(self,greek1: bool, greek2:bool, greek3:bool)\
+        -> List[tuple]:  
+        parameters = self.parameters_definition()
+        param_ids = self.get_ids(greek1,greek2,greek3) 
+        return [p for p in parameters if p[3] in param_ids]
+
+@dataclass
+class PDEBlackScholesOutput: 
+    matrixes : PDEBlackScholesMatrixes
+    spot_vector : np.array
+    time_taken : float
+    dS : float = 0.01
+    dsigma : float = 0.01
+    dr : float = 0.01 
+    dq : float = 0.01 
+    dt : float = 0.01
+
 class PDEBlackScholes: 
 
     def __init__(self, inputdata:PDEBlackScholesInput):
@@ -108,10 +152,6 @@ class PDEBlackScholes:
         self.r = self.inputdata.r 
         self.q = self.inputdata.q 
         self.S = self.inputdata.S 
-        self.dS = self.inputdata.dS
-        self.ds = self.inputdata.dsigma
-        self.dr = self.inputdata.dr
-        self.dq = self.inputdata.dq 
         self.df = 1/(1+self.r*self.dt)
         self.dx = self.logspot_step()
 
@@ -131,10 +171,14 @@ class PDEBlackScholes:
             spotvec[i] = spotvec[i-1]*np.exp(self.dx)
         return spotvec
     
+    def get_matrixes_names(self,ids:list[int]) -> List[str]: 
+        return [l.name for l in list(PDEBlackScholesParameterMapping)
+                if l.value in ids]
+
     def compute_matrixes(self, arg:tuple[float])\
         -> dict[int,List[sparse.csc_matrix]]:
         r, q, sigma, id= arg[0], arg[1], arg[2], arg[3]
-        scheme = ImplicitBlackScholes(
+        scheme = PDEImplicitBlackScholes(
             sigma = sigma,
             r = r,
             q = q,
@@ -146,64 +190,36 @@ class PDEBlackScholes:
             )
         return {id:scheme.transition_matrixes()}
     
-    def args_fd_list(self, greek1:bool = True, 
-            greek2:bool = True, greek3:bool = True) -> List[tuple]: 
-        s, ds, r, q, dr, dq,= self.sigma, self.ds, self.r, self.q,\
-            self.dr, self.dq
-        args_list = [(r, q, s, 0)]
-        if greek1: 
-            new_args = [(r+dr, q, s, 1),
-                        (r, q+dq, s, 2), 
-                        (r, q, s+ds, 3)] 
-            args_list = args_list+new_args
-            if greek2: 
-                new_args = [(r, q, s-ds, 4)] 
-                args_list = args_list+new_args 
-                if greek3: 
-                    new_args = [(r, q, s-2*ds, 5),
-                                (r, q, s+2*ds, 6)] 
-                    args_list = args_list+new_args
-        return args_list
-
     def get_matrixes(self,greek1:bool = True, greek2:bool = True, 
-            greek3:bool = True) -> dict[int, np.array]: 
-        args = self.args_fd_list(greek1,greek2,greek3)
+            greek3:bool = True) -> PDEBlackScholesMatrixes: 
+        pde_parameters = self.inputdata.get_pde_parameters(
+            greek1=greek1, greek2=greek2, greek3=greek3
+        )
         matrixes = MainTool.send_task_with_futures(
             task = self.compute_matrixes,
-            args = args, 
+            args = pde_parameters, 
             max_workers=self.inputdata.max_workers
             )
-        return MainTool.listdict_to_dictlist(matrixes)
-    
+        result = MainTool.listdict_to_dictlist(matrixes)
+        sim_names = self.get_matrixes_names(list(result.keys()))
+        result = dict(zip(sim_names, list(result.values())))
+        return PDEBlackScholesMatrixes(**result)
+
     def get(self, first_order_greek:bool = True, 
             second_order_greek:bool = True, 
             third_order_greek:bool = True) -> PDEBlackScholesOutput: 
-        matrixes = self.get_matrixes(first_order_greek, 
+        return PDEBlackScholesOutput(
+            matrixes = self.get_matrixes(first_order_greek, 
                                      second_order_greek, 
-                                     third_order_greek)
-        output = PDEBlackScholesOutput(
-            grid_list = matrixes[0], 
-            t_vector=self.t_vector(), 
-            step_vector=self.step_vector(),
+                                     third_order_greek),
             spot_vector=self.spot_vector(),
             time_taken=time.time()-self.start, 
-            dS = self.dS, 
-            dsigma = self.ds, 
+            dS = self.inputdata.dS, 
+            dsigma = self.inputdata.dsigma, 
             dt = self.dt, 
-            dr = self.dr, 
-            dq=self.dq
+            dr = self.inputdata.dr, 
+            dq=self.inputdata.dq
             )
-        if first_order_greek: 
-            output.grid_list_sigma_up = matrixes[3] 
-            output.grid_list_r_up = matrixes[1] 
-            output.grid_list_q_up = matrixes[2] 
-            if second_order_greek: 
-                output.grid_list_sigma_down = matrixes[4] 
-                if third_order_greek: 
-                    output.grid_list_sigma_uu = matrixes[6] 
-                    output.grid_list_sigma_dd = matrixes[5] 
-        return output
-
 
     
 

@@ -30,8 +30,8 @@ r = 0.01
 q = 0.1 
 t = 1
 sigma = 0.2
-N = 100
-M = 50000
+N = 400
+M = 250
 dt = t/N
 Bu = 120 
 
@@ -40,16 +40,23 @@ mcinput = MonteCarloBlackScholesInput(
     number_paths=M, 
     number_steps=N,
     discretization=BlackScholesDiscretization.milstein,
-    max_workers=1)
+    max_workers=8)
+pdeinput = PDEBlackScholesInput(
+    S=S, r=r,q=q,t=t,sigma=sigma,
+    spot_vector_size=M, 
+    number_steps=N,max_workers=4)
+
+bspde = PDEBlackScholes(pdeinput)
+
+test = bspde.get(True,True,True)
+
 bsmc = MonteCarloBlackScholes(inputdata=mcinput)
-simulator = bsmc.get(False,False,False)
-sim = simulator.sim
-
-test = MonteCarloPricing(sim=sim, option=option, r=r)
+simulator = bsmc.get(True,True,True)
 
 
-test.compute_price()
+#test = MonteCarloPricing(sim=sim, option=option, r=r)
 
 
-    
+#test.compute_price()
+
 

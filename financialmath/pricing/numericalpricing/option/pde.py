@@ -10,48 +10,33 @@ from financialmath.instruments.option import (
     ObservationType)
 from financialmath.pricing.schemas import OptionPayOffTool
 
-class OneFactorOptionPriceGrids(NamedTuple): 
+@dataclass
+class OneFactorOptionPriceGrids: 
     initial : np.array 
-    spot_vector : np.array
-    S : float 
-    vol_up : np.array = None
-    vol_down : np.array = None
-    vol_uu : np.array = None
-    vol_dd : np.array = None
     r_up : np.array = None
     q_up : np.array = None
-    dt : float = 0
-    dS: float = 0.01
-    dsigma: float = 0.01
-    dr : float = 0.01
-    dq : float = 0.01
+    sigma_up : np.array = None
+    sigma_down : np.array = None
+    sigma_uu : np.array = None
+    sigma_dd : np.array = None
 
-class OneFactorFiniteDifferenceGreeks: 
+    interpolation_method = 'cubic'
 
-    def __init__(self, inputdata: OneFactorOptionPriceGrids, 
-                      interpolation_method: str = 'cubic'): 
-        self.S = inputdata.S
-        self.dt = inputdata.dt
-        self.dS = inputdata.dS
-        self.dsigma = inputdata.dsigma
-        self.dr = inputdata.dr
-        self.dq = inputdata.dq
-        self.spot_vector = inputdata.spot_vector
-        self.V_0 = self.read_grid(inputdata.initial, 0)
-        self.V_dt = self.read_grid(inputdata.initial, 1)
-        self.V_0_rp = self.read_grid(inputdata.r_up, 0)
-        self.V_0_qp = self.read_grid(inputdata.q_up, 0)
-        self.V_0_volu = self.read_grid(inputdata.vol_up, 0)
-        self.V_0_vold = self.read_grid(inputdata.vol_down, 0)
-        self.V_dt_volu = self.read_grid(inputdata.vol_up, 1)
-        self.V_0_voluu = self.read_grid(inputdata.vol_uu, 0)
-        self.V_0_voldd = self.read_grid(inputdata.vol_dd, 0)
-        self.interpolation_method = interpolation_method
-        
     def read_grid(self, grid:np.array, pos: int) -> np.array: 
         try: return grid[:,pos]
         except TypeError: return np.repeat(np.nan, len(self.spot_vector))
-
+    
+    def __post_init__(self):
+        self.vector_0 = self.read_grid(self.initial, 0)
+        self.vector_dt = self.read_grid(self.initial, 1)
+        self.vector_0_r_up = self.read_grid(self.r_up, 0)
+        self.vector_0_q_up = self.read_grid(self.q_up, 0)
+        self.vector_0_sigma_up = self.read_grid(self.sigma_up, 0)
+        self.vector_0_sigma_down = self.read_grid(self.sigma_down, 0)
+        self.vector_dt_sigma_up = self.read_grid(self.sigma_up, 1)
+        self.vector_0_sigma_uu = self.read_grid(self.sigma_uu, 0)
+        self.vector_0_sigma_dd = self.read_grid(self.sigma_dd, 0)
+    
     def interpolate_value(self, value:float, x: np.array, y:np.array) -> float:
         try: 
             f = interpolate.interp1d(
@@ -62,92 +47,106 @@ class OneFactorFiniteDifferenceGreeks:
             return f(value).item()
         except: return np.nan 
     
-    def option_price(self, S: float, vector: np.array) -> float: 
-        return self.interpolate_value(S, self.spot_vector, vector)
+    def option_price(self, S: float, vector: np.array, 
+                     spot_vector:np.array) -> float: 
+        return self.interpolate_value(S, spot_vector, vector)
     
-    def price(self) -> float: 
-        return self.option_price(self.S, self.V_0) 
-    
-    def delta(self, S:float, vector: np.array, h: float) -> float: 
+    def delta(self, S:float, vector: np.array, h: float, 
+              spot_vector:np.array) -> float: 
         Su = S*(1+h)
         Sd = S*(1-h)
-        Vu = self.option_price(S=Su, vector=vector)
-        Vd = self.option_price(S=Sd, vector=vector)
+        Vu = self.option_price(S=Su, vector=vector, spot_vector=spot_vector)
+        Vd = self.option_price(S=Sd, vector=vector, spot_vector=spot_vector)
         return (Vu-Vd)/(Su-Sd)
 
-    def gamma(self, S:float, vector: np.array, h: float) -> float: 
+    def gamma(self, S:float, vector: np.array, h: float, 
+              spot_vector:np.array) -> float: 
         Su = S*(1+h)
         Sd = S*(1-h)
-        delta_up = self.delta(S=Su, vector=vector, h=h)
-        delta_down = self.delta(S=Sd, vector=vector, h=h)
+        delta_up = self.delta(S=Su, vector=vector, h=h, 
+                              spot_vector=spot_vector)
+        delta_down = self.delta(S=Sd, vector=vector, h=h, 
+                                spot_vector=spot_vector)
         return (delta_up-delta_down)/(Su-Sd)
 
-    def speed(self, S:float, vector: np.array, h: float) -> float: 
+    def speed(self, S:float, vector: np.array, h: float, 
+              spot_vector:np.array) -> float: 
         Su = S*(1+h)
         Sd = S*(1-h)
-        gamma_up = self.gamma(S=Su, vector=vector, h=h)
-        gamma_down = self.gamma(S=Sd, vector=vector, h=h)
+        gamma_up = self.gamma(S=Su, vector=vector, h=h, 
+                              spot_vector=spot_vector)
+        gamma_down = self.gamma(S=Sd, vector=vector, h=h, 
+                                spot_vector=spot_vector)
         return (gamma_up-gamma_down)/(Su-Sd)
 
     def theta(self, S:float, uvec: np.array, 
-            dvec: np.array, h:float) -> float:  
-        Vu = self.option_price(S=S, vector=uvec)
-        Vd = self.option_price(S=S, vector=dvec)
+            dvec: np.array, h:float, spot_vector:np.array) -> float:  
+        Vu = self.option_price(S=S, vector=uvec, spot_vector=spot_vector)
+        Vd = self.option_price(S=S, vector=dvec, spot_vector=spot_vector)
         return (Vu-Vd)/h
 
     def vega(self, S:float, uvec: np.array, 
-            dvec: np.array, h:float) -> float:  
-        Vu = self.option_price(S=S, vector=uvec)
-        Vd = self.option_price(S=S, vector=dvec)
+            dvec: np.array, h:float, spot_vector:np.array) -> float:  
+        Vu = self.option_price(S=S, vector=uvec, spot_vector=spot_vector)
+        Vd = self.option_price(S=S, vector=dvec, spot_vector=spot_vector)
         return (Vu-Vd)/h
     
     def rho(self, S:float, uvec: np.array, 
-            dvec: np.array, h:float) -> float:  
-        Vu = self.option_price(S=S, vector=uvec)
-        Vd = self.option_price(S=S, vector=dvec)
+            dvec: np.array, h:float, spot_vector:np.array) -> float:  
+        Vu = self.option_price(S=S, vector=uvec, spot_vector=spot_vector)
+        Vd = self.option_price(S=S, vector=dvec, spot_vector=spot_vector)
         return (Vu-Vd)/h
 
     def epsilon(self, S:float, uvec: np.array, 
-            dvec: np.array, h:float) -> float:  
-        Vu = self.option_price(S=S, vector=uvec)
-        Vd = self.option_price(S=S, vector=dvec)
+            dvec: np.array, h:float, spot_vector:np.array) -> float:  
+        Vu = self.option_price(S=S, vector=uvec, spot_vector=spot_vector)
+        Vd = self.option_price(S=S, vector=dvec, spot_vector=spot_vector)
         return (Vu-Vd)/h
 
     def vanna(self, S:float, uvec: np.array, dvec: np.array, 
-            h_S:float, h_vol:float) -> float: 
-        delta_up = self.delta(S=self.S, vector=uvec, h=h_S)
-        delta_down = self.delta(S=self.S, vector=dvec, h=h_S)
+            h_S:float, h_vol:float, spot_vector:np.array) -> float: 
+        delta_up = self.delta(S=S, vector=uvec, h=h_S, spot_vector=spot_vector)
+        delta_down = self.delta(S=S, vector=dvec, h=h_S, 
+                                spot_vector=spot_vector)
         return (delta_up-delta_down)/h_vol
 
     def volga(self, S:float, uvec: np.array, 
-            vec: np.array, dvec: np.array, h:float): 
-        Vu = self.option_price(S=S, vector=uvec)
-        V = self.option_price(S=S, vector=vec)
-        Vd = self.option_price(S=S, vector=dvec)
+            vec: np.array, dvec: np.array, h:float, 
+            spot_vector:np.array) -> float: 
+        Vu = self.option_price(S=S, vector=uvec, spot_vector=spot_vector)
+        V = self.option_price(S=S, vector=vec, spot_vector=spot_vector)
+        Vd = self.option_price(S=S, vector=dvec, spot_vector=spot_vector)
         return (Vu+Vd -2*V)/(h**2)
 
     def charm(self, S:float, uvec: np.array, 
-            dvec: np.array, h_S:float, dt:float): 
-        delta_up = self.delta(S=S, vector=uvec, h=h_S)
-        delta_down = self.delta(S=S, vector=dvec, h=h_S)
+            dvec: np.array, h_S:float, dt:float, 
+            spot_vector:np.array) -> float: 
+        delta_up = self.delta(S=S, vector=uvec, h=h_S, spot_vector=spot_vector)
+        delta_down = self.delta(S=S, vector=dvec, h=h_S, 
+                                spot_vector=spot_vector)
         return (delta_up-delta_down)/dt
 
     def veta(self, S:float, uvec_dt: np.array, dvec_dt: np.array, 
-            uvec: np.array, dvec: np.array, h_vol: float, dt:float): 
-        vega_up = self.vega(S=S, uvec=uvec_dt, dvec=dvec_dt, h=h_vol) 
-        vega_down = self.vega(S=S, uvec=uvec, dvec=dvec, h=h_vol) 
+            uvec: np.array, dvec: np.array, h_vol: float, dt:float, 
+            spot_vector:np.array) -> float: 
+        vega_up = self.vega(S=S, uvec=uvec_dt, dvec=dvec_dt, h=h_vol, 
+                            spot_vector=spot_vector) 
+        vega_down = self.vega(S=S, uvec=uvec, dvec=dvec, h=h_vol, 
+                              spot_vector=spot_vector) 
         return (vega_up-vega_down)/dt
 
     def zomma(self, S:float, uvec: np.array, dvec: np.array, 
-            h_S: float, h_vol: float): 
-        gamma_up = self.gamma(S=S, vector=uvec, h=h_S)
-        gamma_down = self.gamma(S=S, vector=dvec, h=h_S)
+            h_S: float, h_vol: float, spot_vector:np.array) -> float: 
+        gamma_up = self.gamma(S=S, vector=uvec, h=h_S, spot_vector=spot_vector)
+        gamma_down = self.gamma(S=S, vector=dvec, h=h_S, 
+                                spot_vector=spot_vector)
         return (gamma_up-gamma_down)/h_vol
     
     def color(self, S:float, uvec: np.array, dvec: np.array, 
-            h_S: float, dt: float): 
-        gamma_up = self.gamma(S=S, vector=uvec, h=h_S)
-        gamma_down = self.gamma(S=S, vector=dvec, h=h_S)
+            h_S: float, dt: float, spot_vector:np.array) -> float: 
+        gamma_up = self.gamma(S=S, vector=uvec, h=h_S, spot_vector=spot_vector)
+        gamma_down = self.gamma(S=S, vector=dvec, h=h_S, 
+                                spot_vector=spot_vector)
         return (gamma_up-gamma_down)/dt
     
     def vera(self) -> float: 
@@ -156,45 +155,109 @@ class OneFactorFiniteDifferenceGreeks:
     def ultima(self) -> float: 
         return np.nan
     
-    def greeks(self) -> dict[str, float]: 
+    def price(self, S: float, spot_vector: np.array) -> float: 
+        return self.option_price(S, self.vector_0, spot_vector)
+    
+    def greeks(self, S: float, spot_vector: np.array, dS:float, dt:float, 
+               dsigma:float, dr:float, dq:float) -> dict[str, float]: 
         return {
-            'delta':self.delta(self.S,self.V_0,self.dS), 
-            'vega':self.vega(self.S,self.V_0_volu,self.V_0,self.dsigma), 
-            'theta':self.theta(self.S,self.V_dt,self.V_0,self.dt),
-            'rho':self.rho(self.S,self.V_0_rp,self.V_0,self.dr),
-            'epsilon':self.epsilon(self.S,self.V_0_qp,self.V_0,self.dq),
-            'gamma':self.gamma(self.S, self.V_0, self.dS),
-            'vanna':self.vanna(self.S, self.V_0_volu,self.V_0,self.dS,
-                             self.dsigma),
-            'volga':self.volga(self.S,self.V_0_volu,self.V_0,
-                             self.V_0_vold,self.dsigma),
-            'charm':self.charm(self.S,self.V_dt,self.V_0,
-                             self.dS,self.dt),
-            'veta':self.veta(self.S,self.V_dt_volu,self.V_dt,self.V_0_volu,
-                           self.V_0,self.dsigma,self.dt),
+            'delta':self.delta(
+                S = S,
+                vector = self.vector_0,
+                h = dS, 
+                spot_vector = spot_vector), 
+            'vega':self.vega(
+                S = S,
+                uvec = self.vector_0_sigma_up,
+                dvec = self.vector_0,
+                h = dsigma, 
+                spot_vector = spot_vector), 
+            'theta':self.theta(
+                S = S,
+                uvec = self.vector_dt,
+                dvec = self.vector_0,
+                h = dt, 
+                spot_vector = spot_vector),
+            'rho':self.rho(
+                S = S,
+                uvec = self.vector_0_r_up,
+                dvec = self.vector_0,
+                h = dr, 
+                spot_vector = spot_vector),
+            'epsilon':self.epsilon(
+                S = S,
+                uvec = self.vector_0_q_up,
+                dvec = self.vector_0,
+                h = dq, 
+                spot_vector = spot_vector),
+            'gamma':self.gamma(
+                S = S,
+                vector = self.vector_0,
+                h = dS, 
+                spot_vector = spot_vector),
+            'vanna':self.vanna(
+                S = S,
+                uvec = self.vector_0_sigma_up,
+                dvec = self.vector_0,
+                h_S = dS,
+                h_vol = dsigma, 
+                spot_vector = spot_vector),
+            'volga':self.volga(
+                S = S,
+                uvec = self.vector_0_sigma_up,
+                vec = self.vector_0,
+                dvec = self.vector_0_sigma_down,
+                h = dsigma, 
+                spot_vector = spot_vector),
+            'charm':self.charm(
+                S = S,
+                uvec = self.vector_dt,
+                dvec = self.vector_0,
+                h_S = dS,
+                dt = dt, 
+                spot_vector = spot_vector),
+            'veta':self.veta(
+                S = S,
+                uvec_dt = self.vector_dt_sigma_up,
+                dvec_dt = self.vector_dt,
+                uvec = self.vector_0_sigma_up,
+                dvec = self.vector_0,
+                h_vol = dsigma,
+                dt = dt, 
+                spot_vector = spot_vector),
             'vera':np.nan,
-            'speed':self.speed(self.S,self.V_0,self.dS),
-            'zomma':self.zomma(self.S,self.V_0_volu,self.V_0,self.dS,
-                             self.dsigma),
-            'color':self.color(self.S, self.V_dt, self.V_0, self.dS, 
-                             self.dt),
+            'speed':self.speed(
+                S = S,
+                vector = self.vector_0,
+                h = dS, 
+                spot_vector = spot_vector),
+            'zomma':self.zomma(
+                S = S,
+                uvec = self.vector_0_sigma_up,
+                dvec = self.vector_0,
+                h_S = dS,
+                h_vol = dsigma, 
+                spot_vector = spot_vector),
+            'color':self.color(
+                S = S,
+                uvec = self.vector_dt,
+                dvec = self.vector_0,
+                h_S = dS,
+                dt = dt, 
+                spot_vector = spot_vector),
             'ultima':np.nan
             }
-        
-@dataclass
-class OneFactorFiniteDifferencePricer: 
-    option : Option 
-    grid_list : List[sparse.csc_matrix]
-    spot_vector : np.array
-    S : float 
-    dt : float 
-    dS : float 
-    interpolation_method: str = 'cubic'
     
+@dataclass
+class OneFactorOptionPriceGridGenerator:
+    option : Option 
+    matrixes : List[sparse.csc_matrix]
+    spot_vector : np.array
+
     def __post_init__(self): 
         self.spec = self.option.specification
-        self.N = len(self.grid_list)
-        self. M = len(self.spot_vector)
+        self.N = len(self.matrixes)
+        self.M = len(self.spot_vector)
         self.option_steps = self.spec.get_steps(self.N)
         self.dt = self.spec.tenor.expiry/self.N
         self.ptool = OptionPayOffTool(
@@ -207,7 +270,7 @@ class OneFactorFiniteDifferencePricer:
             binary_amount=self.spec.binary_amout,
             payoff = self.option.payoff
             )
-
+    
     def early_exercise_condition(self, ptool: OptionPayOffTool,
                                   prices : np.array, n:int) -> np.array: 
         payoff = ptool.payoff_vector()
@@ -253,8 +316,8 @@ class OneFactorFiniteDifferencePricer:
         grid[:, self.N-1] = p0
         price_vec = p0
         for n in range(self.N-1, -1, -1):
-            tmat =  self.grid_list[n]
-            price_vec = tmat.dot(price_vec) 
+            mat =  self.matrixes[n]
+            price_vec = mat.dot(price_vec) 
             price_vec = self.check_path_condition(ptool,price_vec,n)
             grid[:, n] = price_vec
         return grid 
