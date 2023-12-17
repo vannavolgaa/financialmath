@@ -53,7 +53,7 @@ class MainTool:
 
     @staticmethod
     def order_join_lists(keys:List, values:List, 
-                                by_key:bool = True, reverse = False): 
+                        by_key:bool = True, reverse = False) -> dict: 
         data = dict(zip(keys,values))
         if by_key: return dict(sorted(data.items(), reverse=reverse))
         else: return sorted(data.items(), key=lambda x: x[1], reverse=reverse)   

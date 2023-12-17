@@ -303,10 +303,10 @@ class OneFactorOptionPriceGridGenerator:
             
     def check_path_condition(self, ptool: OptionPayOffTool, 
                              prices : np.array, n:int) -> np.array: 
-        if ptool.payoff.is_barrier():
-            prices = self.touch_barrier_condition(ptool,prices, n)
         if ptool.payoff.is_early_exercise():
             prices = self.early_exercise_condition(ptool, prices, n)
+        if ptool.payoff.is_barrier():
+            prices = self.touch_barrier_condition(ptool,prices, n)
         return prices
     
     def generate_grid(self, ptool: OptionPayOffTool) -> np.array: 

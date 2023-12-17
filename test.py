@@ -54,9 +54,5 @@ bsmc = MonteCarloBlackScholes(inputdata=mcinput)
 simulator = bsmc.get(True,True,True)
 
 
-#test = MonteCarloPricing(sim=sim, option=option, r=r)
-
-
-#test.compute_price()
 
 
