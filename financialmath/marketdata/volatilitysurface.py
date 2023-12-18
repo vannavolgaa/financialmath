@@ -8,9 +8,9 @@ from financialmath.marketdata.schemas2 import VolatilitySurface
 from financialmath.tools.tool import MainTool
 from financialmath.model.svi import (
     StochasticVolatilityInspired, 
-    SSVIFunctions
+    SSVIFunctions, 
+    SurfaceSVI
     )
-
 
 class StrikeType(Enum): 
     strike = 1 
@@ -32,7 +32,7 @@ class ExtrapolatedTotalVarianceTermStructure:
             keys=self.t, 
             values=self.totvariance)
         self.t = np.array(list(ordered_dict.keys()))
-        self.total_variance = np.array(list(ordered_dict.values()))
+        self.totvariance = np.array(list(ordered_dict.values()))
         self.extrapolator = self.extrapolation()
 
     def extrapolation(self) -> interpolate.interp1d: 
@@ -48,11 +48,9 @@ class ExtrapolatedTotalVarianceTermStructure:
     def total_variance(self, t: np.array) -> np.array: 
         return self.extrapolator(x=t)
 
-
+@dataclass
 class FlatVolatilitySurface(VolatilitySurface): 
-
-    def __init__(self, volatility: float): 
-        self.volatility = volatility 
+    volatility : float 
 
     def implied_variance(self, k: np.array, t: np.array) -> np.array:
         n = len(k)*len(t)
@@ -75,44 +73,121 @@ class FlatVolatilitySurface(VolatilitySurface):
         return np.repeat(0,n)
 
 @dataclass
-class PowerLawSSVIVolatilitySurface(VolatilitySurface): 
+class SSVIVolatilitySurface(VolatilitySurface): 
 
     nu : float 
     rho : float 
     _gamma : float 
-    t : List[float]
-    totvariance : List[float]
-    ssvi_function: SSVIFunctions = SSVIFunctions.power_law1
+    atm_term_structure : ExtrapolatedTotalVarianceTermStructure
+    power_law : SSVIFunctions = SSVIFunctions.power_law
 
     def __post_init__(self): 
-        self.atm_volatility_term_structure = \
-            ExtrapolatedTotalVarianceTermStructure(
-                t = self.t,
-                totvariance = self.totvariance
-            )
+        self.ssvi = SurfaceSVI(
+            rho=self.rho, 
+            nu = self.nu, 
+            _gamma=self._gamma, 
+            ssvi_function=self.power_law)
 
     def strike_type(self) -> StrikeType: 
-        return StrikeType.forward_log_moneyness
+        return StrikeType.log_moneyness
     
-    def svi(self, t: float) -> StochasticVolatilityInspired: 
-        atm_tvar = self.atm_volatility_term_structure.total_variance(t=t)
+    def total_variance(self, t: np.array, k:np.array) -> np.array: 
+        atm_tvar = self.atm_term_structure.total_variance(t=t)
+        return self.ssvi.total_variance(atm_tvar=atm_tvar, k=k, t=t)
     
-    def power_law(self, atmtvar: np.array) -> np.array: 
-        return self.ssvi_function(atmtvar=atmtvar, _nu=self.nu, 
-                                  _gamma = self._gamma)
-
-    def total_variance(self, k: np.array, t: np.array) -> np.array:
-        atm_tvar = self.atm_volatility_term_structure.total_variance(t=t)
-        pl = self.power_law(atm_tvar)
-        term1 = self.p*pl*k
-        term2 = np.sqrt((pl*k+self.p)**2 + (1-self.p**2))
-        return .5*atm_tvar*(1 + term1 + term2)
+    def implied_variance(self, t: np.array, k:np.array) -> np.array: 
+        atm_tvar = self.atm_term_structure.total_variance(t=t)
+        return self.ssvi.implied_variance(atm_tvar=atm_tvar, k=k, t=t)
     
-    def implied_variance(self, k: np.array, t: np.array) -> np.array:
-        return self.total_variance(k=k, t=t)/t 
+    def implied_volatility(self, t: np.array, k:np.array) -> np.array: 
+        atm_tvar = self.atm_term_structure.total_variance(t=t)
+        return self.ssvi.implied_volatility(atm_tvar=atm_tvar, k=k, t=t)
     
-    def implied_volatility(self, k: np.array, t: np.array) -> np.array:
-        return np.sqrt(self.implied_variance(k=k, t=t))
-
+    def local_volatility(self, t: np.array, k:np.array) -> np.array: 
+        atm_tvar = self.atm_term_structure.total_variance(t=t)
+        return self.ssvi.local_volatility(atm_tvar=atm_tvar, k=k, t=t)
+    
+    def risk_neutral_density(self, t: np.array, k:np.array) -> np.array: 
+        atm_tvar = self.atm_term_structure.total_variance(t=t)
+        return self.ssvi.risk_neutral_density(atm_tvar=atm_tvar, k=k, t=t)
+        
+@dataclass
+class SVIVolatilitySurface(VolatilitySurface): 
+    inputdata : List[StochasticVolatilityInspired]  
+    maximum_extrapolated_t : float = 100
+    interpolation_method = 'cubic'
+    
+    def __post_init__(self): 
+        self.t_vector = [i.t for i in self.inputdata]
+        vt_vector = [i.vt for i in self.inputdata]
+        pt_vector = [i.pt for i in self.inputdata]
+        ct_vector = [i.ct for i in self.inputdata]
+        ut_vector = [i.ut for i in self.inputdata]
+        vmt_vector = [i.vmt for i in self.inputdata]
+        self.min_obs_t, self.max_obs_t = np.min(t_vector), np.max(t_vector)
+        self.svi_min = [i for i in self.inputdata if i.t == self.min_obs_t][0]
+        self.svi_max = [i for i in self.inputdata if i.t == self.max_obs_t][0]
+        self.atm_term_structure = ExtrapolatedTotalVarianceTermStructure(
+            t = self.t_vector, 
+            totvariance = vt_vector, 
+            max_t = 100
+        )
+        self.long_term_svi = self.long_term_extrapolation()
+        self.short_term_svi = self.short_term_extrapolation()
+        self.interpolated_ut = self.interpolate_parameters(ut_vector)
+        self.interpolated_ct = self.interpolate_parameters(ct_vector)
+        self.interpolated_pt = self.interpolate_parameters(pt_vector)
+        self.interpolated_vmt = self.interpolate_parameters(vmt_vector)
+    
+    def interpolate_parameters(self, vector:List[float]) -> interpolate.interp1d: 
+        return interpolate.interp1d(
+            x=t_vector, 
+            y=vector, 
+            kind=self.interpolation_method
+            )
+    
+    def long_term_extrapolation(self) -> SSVIVolatilitySurface: 
+        params = self.svi_max.power_law_params()
+        return SSVIVolatilitySurface(
+            rho = params['rho'], 
+            nu = params['nu'], 
+            _gamma = params['gamma'], 
+            power_law=SSVIFunctions.power_law2, 
+            atm_term_structure = self.atm_term_structure
+            )
+    
+    def short_term_extrapolation(self) -> SSVIVolatilitySurface: 
+        params = self.svi_min.power_law_params()
+        return SSVIVolatilitySurface(
+            rho = params['rho'], 
+            nu = params['nu'], 
+            _gamma = params['gamma'], 
+            power_law=SSVIFunctions.power_law, 
+            atm_term_structure = self.atm_term_structure
+            ) 
+    
+    def in_between_interpolation(self, t:np.array) -> StochasticVolatilityInspired: 
+        wt = self.atm_term_structure.total_variance(t=t)
+        vt =  wt/t
+        pt = self.interpolated_pt(x=t)
+        ut = self.interpolated_ut(x=t)
+        ct = self.interpolated_ct(x=t)
+        vmt = self.interpolated_vmt(x=t)
+        return StochasticVolatilityInspired(
+            atm_variance = vt, 
+            atm_skew = ut, 
+            slope_call_wing = ct, 
+            slope_put_wing = pt, 
+            min_variance = vmt, 
+            t = t
+        )
+    
+       
+    
+        
+    
+     
+        
+        
     
 
