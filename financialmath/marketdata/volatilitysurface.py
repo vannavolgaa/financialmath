@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 import numpy as np 
 from typing import List
 from scipy import interpolate
-from financialmath.marketdata.schemas2 import VolatilitySurface
+from financialmath.marketdata.schemas import VolatilitySurface
 from financialmath.tools.tool import MainTool
 from financialmath.model.svi import (
     StochasticVolatilityInspired, 
@@ -110,7 +110,33 @@ class SSVIVolatilitySurface(VolatilitySurface):
     def risk_neutral_density(self, t: np.array, k:np.array) -> np.array: 
         atm_tvar = self.atm_term_structure.total_variance(t=t)
         return self.ssvi.risk_neutral_density(atm_tvar=atm_tvar, k=k, t=t)
-        
+
+@dataclass
+class SVIObject: 
+    indexes : np.array 
+    k : np.array 
+    t : np.array 
+    svi_model : SSVIVolatilitySurface or StochasticVolatilityInspired
+
+    def __post_init__(self): 
+        if self.indexes.size == 0: self.compute = False
+        else: self.compute = True 
+
+    def total_variance(self): 
+        return self.svi_model.total_variance(t=self.t, k=self.k)
+    
+    def implied_variance(self): 
+        return self.svi_model.implied_variance(t=self.t, k=self.k)
+    
+    def implied_volatility(self): 
+        return self.svi_model.implied_volatility(t=self.t, k=self.k)
+    
+    def local_volatility(self): 
+        return self.svi_model.local_volatility(t=self.t, k=self.k)
+    
+    def risk_neutral_density(self): 
+        return self.svi_model.risk_neutral_density(t=self.t, k=self.k)
+    
 @dataclass
 class SVIVolatilitySurface(VolatilitySurface): 
     inputdata : List[StochasticVolatilityInspired]  
@@ -124,7 +150,8 @@ class SVIVolatilitySurface(VolatilitySurface):
         ct_vector = [i.ct for i in self.inputdata]
         ut_vector = [i.ut for i in self.inputdata]
         vmt_vector = [i.vmt for i in self.inputdata]
-        self.min_obs_t, self.max_obs_t = np.min(t_vector), np.max(t_vector)
+        self.min_obs_t = np.min(self.t_vector)
+        self.max_obs_t = np.max(self.t_vector)
         self.svi_min = [i for i in self.inputdata if i.t == self.min_obs_t][0]
         self.svi_max = [i for i in self.inputdata if i.t == self.max_obs_t][0]
         self.atm_term_structure = ExtrapolatedTotalVarianceTermStructure(
@@ -139,14 +166,15 @@ class SVIVolatilitySurface(VolatilitySurface):
         self.interpolated_pt = self.interpolate_parameters(pt_vector)
         self.interpolated_vmt = self.interpolate_parameters(vmt_vector)
     
-    def interpolate_parameters(self, vector:List[float]) -> interpolate.interp1d: 
+    def _interpolate_parameters(self, vector:List[float])\
+        -> interpolate.interp1d: 
         return interpolate.interp1d(
-            x=t_vector, 
+            x=self.t_vector, 
             y=vector, 
             kind=self.interpolation_method
             )
     
-    def long_term_extrapolation(self) -> SSVIVolatilitySurface: 
+    def _long_term_extrapolation(self) -> SSVIVolatilitySurface: 
         params = self.svi_max.power_law_params()
         return SSVIVolatilitySurface(
             rho = params['rho'], 
@@ -156,7 +184,7 @@ class SVIVolatilitySurface(VolatilitySurface):
             atm_term_structure = self.atm_term_structure
             )
     
-    def short_term_extrapolation(self) -> SSVIVolatilitySurface: 
+    def _short_term_extrapolation(self) -> SSVIVolatilitySurface: 
         params = self.svi_min.power_law_params()
         return SSVIVolatilitySurface(
             rho = params['rho'], 
@@ -166,7 +194,8 @@ class SVIVolatilitySurface(VolatilitySurface):
             atm_term_structure = self.atm_term_structure
             ) 
     
-    def in_between_interpolation(self, t:np.array) -> StochasticVolatilityInspired: 
+    def _in_between_interpolation(self, t:np.array)\
+        -> StochasticVolatilityInspired: 
         wt = self.atm_term_structure.total_variance(t=t)
         vt =  wt/t
         pt = self.interpolated_pt(x=t)
@@ -182,7 +211,50 @@ class SVIVolatilitySurface(VolatilitySurface):
             t = t
         )
     
-       
+    def _get_svi_object(self, k: np.array, t: np.array) -> List[SVIObject]:
+        i_st = np.where(t<self.min_obs_t)[0]
+        i_lt = np.where(t>self.max_obs_t)[0]
+        i_bs = np.where((t<=self.max_obs_t) and (t>=self.min_obs_t))[0]
+        t_list = [t[i_st], t[i_lt], t[i_bs]]
+        k_list = [k[i_st], k[i_lt], k[i_bs]]
+        bs_model = self.in_between_interpolation(t=t[i_bs])
+        models = [self.short_term_svi, self.long_term_svi, bs_model]
+        indexes_list = [i_st, i_lt, i_bs]
+        data = zip(indexes_list, k_list, t_list, models)
+        return [SVIObject(i,kk,tt,m) for i, kk, tt, m in data]
+    
+    def _compute_method(self, k: np.array, t: np.array, method:str)\
+        -> np.array:
+        svi_object = self.get_svi_object(k=k, t=t)
+        result = np.zeros(k.shape)
+        for s in svi_object: 
+            if s.compute: 
+                i = s.indexes
+                match method: 
+                    case 'totalvar': result[i] = s.total_variance()
+                    case 'impliedvol': result[i] = s.implied_volatility()
+                    case 'localvol': result[i] = s.local_volatility()
+                    case 'impliedvar': result[i] = s.implied_variance()
+                    case 'rnd': result[i] = s.risk_neutral_density()
+            else: continue
+        return result
+    
+    def total_variance(self, k: np.array, t: np.array) -> np.array:
+        return self.compute_method(k=k, t=t, method='totalvar')
+
+    def implied_variance(self, k: np.array, t: np.array) -> np.array:
+        return self.compute_method(k=k, t=t, method='impliedvar')
+    
+    def implied_volatility(self, k: np.array, t: np.array) -> np.array:
+        return self.compute_method(k=k, t=t, method='impliedvol')
+    
+    def local_volatility(self, k: np.array, t: np.array) -> np.array:
+        return self.compute_method(k=k, t=t, method='localvol')
+    
+    def risk_neutral_density(self, k: np.array, t: np.array) -> np.array:
+        return self.compute_method(k=k, t=t, method='rnd')
+
+
     
         
     

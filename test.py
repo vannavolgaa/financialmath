@@ -55,4 +55,7 @@ simulator = bsmc.get(True,True,True)
 
 
 
+import numpy as np 
 
+a = np.array([1,2,3,4,5])
+np.where(a==10)[0].size

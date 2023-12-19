@@ -161,6 +161,11 @@ class JWSVITool:
         b=self.b
         return self.dadt()+b*self.dgdt(k=k)+self.dbdt()*self.functiong(k=k)
 
+class SSVIFunctions(Enum):
+    heston_like = 1 
+    power_law = 2
+    power_law2 = 3
+
 @dataclass
 class StochasticVolatilityInspired:
     atm_variance : float or np.array 
@@ -241,12 +246,7 @@ class StochasticVolatilityInspired:
 
     def power_law_params(self) -> dict[str, float]: 
         _gamma, rho = .5, np.sqrt(1-self.vmt/self.vt)
-        return {'gamma': _gamma, 'rho': rho, 'nu': self.ut*2*np.sqrt(t)/rho}
-   
-class SSVIFunctions(Enum):
-    heston_like = 1 
-    power_law = 2
-    power_law2 = 3
+        return {'gamma': _gamma, 'rho': rho, 'nu': self.ut*2*np.sqrt(self.t)/rho}
      
 @dataclass
 class SurfaceSVI: 
@@ -270,24 +270,24 @@ class SurfaceSVI:
     
     def ssvi_parametrization(self,atmtvar: np.array) -> np.array:
         match self.ssvi_function: 
-            case SSVIFunctionsList.heston_like: 
+            case SSVIFunctions.heston_like: 
                 x = atmtvar*self._lambda 
                 return (1-(1-np.exp(-x)/x))/x
-            case SSVIFunctionsList.power_law: 
+            case SSVIFunctions.power_law: 
                 return self.nu*(atmtvar**(-self._gamma))
-            case SSVIFunctionsList.power_law2: 
+            case SSVIFunctions.power_law2: 
                 g = self.gamma 
                 return self.nu/((atmtvar**g)*((1+atmtvar)**(1-g)))
                 
     def ssvi_derivatives(self,atmtvar: np.array) -> np.array:
         match self.ssvi_function: 
-            case SSVIFunctionsList.heston_like: 
+            case SSVIFunctions.heston_like: 
                 x = atmtvar*self._lambda  
                 return np.exp(-x)*(np.exp(x)-1-x)/(x**2)
-            case SSVIFunctionsList.power_law: 
+            case SSVIFunctions.power_law: 
                 g = self._gamma
                 return (1-g)*self.ssvi_parametrization(atmtvar=atmtvar)
-            case SSVIFunctionsList.power_law2: pass 
+            case SSVIFunctions.power_law2: pass 
     
     def parameters_check(self) -> int: 
         cond1g = self._gamma>0
@@ -295,11 +295,11 @@ class SurfaceSVI:
         cond_gamma = (cond1g and cond2g)
         cond_nu = self.nu > 0
         match self.ssvi_function: 
-            case SSVIFunctionsList.heston_like: 
+            case SSVIFunctions.heston_like: 
                 cond_model = self._lambda>0 
-            case SSVIFunctionsList.power_law: 
+            case SSVIFunctions.power_law: 
                 cond_model = (cond_gamma and cond_nu)
-            case SSVIFunctionsList.power_law2:  
+            case SSVIFunctions.power_law2:  
                 cond_model = (cond_gamma and cond_nu)
         cond_rho = abs(self.p) < 1
         if cond_rho and cond_model: return 0
@@ -326,15 +326,15 @@ class SurfaceSVI:
     
     def static_arbitrage_check(self, atm_tvar: np.array) -> int: 
         match self.ssvi_function: 
-            case SSVIFunctionsList.heston_like: 
+            case SSVIFunctions.heston_like: 
                 b_cond = self.butterfly_check(atmtvar=atm_tvar)
                 cs_cond = self.calendar_spread_check(atm_tvar=atm_tvar)
                 return np.min(b_cond+cs_cond, 1) 
-            case SSVIFunctionsList.power_law: 
+            case SSVIFunctions.power_law: 
                 b_cond = self.butterfly_check(atmtvar=atm_tvar)
                 cs_cond = self.calendar_spread_check(atm_tvar=atm_tvar)
                 return np.min(b_cond+cs_cond, 1) 
-            case SSVIFunctionsList.power_law2: 
+            case SSVIFunctions.power_law2: 
                 cond = (self.nu*(1+np.abs(self.rho)) <= 2)
                 if cond: return 0
                 else: return 1
