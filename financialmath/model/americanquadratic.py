@@ -10,7 +10,7 @@ from financialmath.model.blackscholes.closedform import (
     ClosedFormBlackScholesInput
 )
 
-class QuadraticApproximationAmericanVanillaCall: 
+class QuadraticApproximationAmericanVanilla: 
     
     def __init__(self, inputdata:ClosedFormBlackScholesInput, 
                  future:bool = False, put:bool = False):
@@ -25,6 +25,8 @@ class QuadraticApproximationAmericanVanillaCall:
         self.M = 2*self.r/self.sigma**2
         self.q2 = (-(self.N-1)+np.sqrt((self.N-1)**2+4*self.M/self.F))/2
         self.q1 = (-(self.N-1)-np.sqrt((self.N-1)**2+4*self.M/self.F))/2
+        self.q2_inf = (-(self.N-1)+np.sqrt((self.N-1)**2+4*self.M))/2
+        self.q1_inf = (-(self.N-1)-np.sqrt((self.N-1)**2+4*self.M))/2
         self.S_star = self.find_optimal_exercise_price()
         self.euro_prices = self.bs.price()
     
@@ -35,6 +37,17 @@ class QuadraticApproximationAmericanVanillaCall:
         else: 
             if self.put: return BlackScholesEuropeanVanillaPut(inputdata)
             else: return BlackScholesEuropeanVanillaCall(inputdata) 
+    
+    def initial_optimal_exercise_price(self) -> np.array: 
+        K, b, sigma, t = self.K, self.b, self.sigma, self.t
+        if self.put: 
+            S_star_inf = K/(1-1/self.q1_inf)  
+            h = (b*t-2*sigma*np.sqrt(t))*K/(K-S_star_inf)
+            return S_star_inf+(K-S_star_inf)*np.exp(h)
+        else: 
+            S_star_inf = K/(1-1/self.q2_inf)  
+            h = -(b*t+2*sigma*np.sqrt(t))*K/(S_star_inf-K)
+            return K+(S_star_inf-K)*(1-np.exp(h))
     
     def minimize_function(self, S: np.array) -> np.array:
         inputdata = ClosedFormBlackScholesInput(
@@ -52,19 +65,21 @@ class QuadraticApproximationAmericanVanillaCall:
             sigma = self.sigma, t = self.t, K = self.K
         )
         bs = self.return_black_scholes(inputdata=inputdata)
-        gamma = bs.gamma()
-        if self.put: return (1/self.q1)-1+S*gamma
-        else: return 1-(1/self.q2)+S*gamma
+        gamma, delta = bs.gamma(), bs.delta()
+        if self.put: 
+            ratio = (1/self.q1)
+            return -1 - delta*(ratio-1) + ratio*(1+S*gamma)
+        else: 
+            ratio = (1/self.q2)
+            return 1 - delta*(1-ratio) - ratio*(1-S*gamma)
     
     def find_optimal_exercise_price(self) -> np.array:
-        if self.put: S_0 = self.K*0.9
-        else: S_0 = self.K*1.1 
         return NewtonRaphsonMethod(
             f = self.minimize_function,
             df = self.minimize_function_derivative, 
-            x_0 = S_0, 
-            epsilon=0.00001
-        ).find_x()
+            x_0 = self.initial_optimal_exercise_price(), 
+            epsilon=0.00001, 
+            max_iterations=1000).find_x()
 
     def early_exercise(self) -> np.array: 
         if self.put: return self.K - self.S
@@ -83,7 +98,7 @@ class QuadraticApproximationAmericanVanillaCall:
         delta = bs.delta()
         if self.put: 
             factor = self.S_star*((self.S/self.S_star)**self.q1)
-            return factor*(1+delta)/self.q1
+            return -factor*(1+delta)/self.q1
         else: 
             factor = self.S_star*((self.S/self.S_star)**self.q2)
             return factor*(1-delta)/self.q2
@@ -91,6 +106,7 @@ class QuadraticApproximationAmericanVanillaCall:
     def vectorized_compute_prices(self, early_ex:np.array, 
                                   exprem:np.array, 
                                   early_ex_cond: np.array) -> np.array: 
+        exprem = np.maximum(exprem,0)
         indexes = np.where(early_ex_cond)[0]
         inv_cond = np.logical_not(early_ex_cond)
         inv_indexes =  np.where(inv_cond)[0]
@@ -116,7 +132,7 @@ class QuadraticApproximationAmericanVanillaCall:
             if early_exercise_cond: result = early_ex
             else: 
                 if np.isnan(exercise_premium): exercise_premium=0
-                result = self.euro_prices + exercise_premium
+                result = self.euro_prices + exercise_premium#np.max([exercise_premium,0])
         else: 
             result = self.vectorized_compute_prices(
                 early_ex=early_ex, 
