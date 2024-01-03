@@ -410,7 +410,21 @@ class BlackEuropeanVanillaPut:
 
 
     
-
+@dataclass 
+class BlackScholesPutCallParity: 
+    P : np.array 
+    C : np.array 
+    S : np.array 
+    K : np.array 
+    r : np.array = None 
+    
+    def __post_init__(self): 
+        C, P, S, K, t = self.C, self.P, self.S, self.K, self.t
+        if self.r is None: 
+            self.r = np.log((C-P-S)/-K)/-t
+            try: self.q = np.repeat(0, len(self.r))
+            except Exception: self.q = 0 
+        else: self.q = np.log((C-P+K*np.exp(-self.r*t))/S)/-t
 
 
 
