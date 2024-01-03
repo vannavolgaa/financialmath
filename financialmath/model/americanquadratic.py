@@ -124,7 +124,7 @@ class QuadraticApproximationAmericanVanilla:
         if self.put: return (self.S<=self.S_star)
         else: return (self.S>=self.S_star)
 
-    def compute_prices(self) -> np.array: 
+    def price(self) -> np.array: 
         early_ex = self.early_exercise()
         exercise_premium = self.exercise_premium()
         early_exercise_cond = self.early_exercise_cond()

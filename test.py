@@ -36,7 +36,7 @@ pdetest = pdepricer.valuation()
 print(pdetest.price)
 print(qame.compute_prices())
 
-qame.exercise_premium()
+
 #qame.initial_optimal_exercise_price()
 
 #qame.S_star
