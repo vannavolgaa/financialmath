@@ -1,5 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
+from scipy.optimize import OptimizeResult, newton
 from financialmath.tools.probability import NormalDistribution
 
 @dataclass 
@@ -408,23 +409,293 @@ class BlackEuropeanVanillaPut:
     def ultima(self) -> float or np.array: 
         return self.df*self.bs.ultima()
 
-
+class QuadraticApproximationAmericanVanilla: 
     
+    def __init__(self, inputdata:ClosedFormBlackScholesInput, 
+                 future:bool = False, put:bool = False):
+        self.future, self.put = future, put
+        self.S, self.K, self.q, self.r, self.t, self.sigma = inputdata.S,\
+             inputdata.K,inputdata.q,inputdata.r,inputdata.t,inputdata.sigma
+        if future: self.b = 0 
+        else: self.b = self.r-self.q 
+        self.bs = self.return_black_scholes(inputdata)
+        self.F = 1-np.exp(-self.r*self.t)
+        self.N = 2*self.b/self.sigma**2
+        self.M = 2*self.r/self.sigma**2
+        self.q2 = (-(self.N-1)+np.sqrt((self.N-1)**2+4*self.M/self.F))/2
+        self.q1 = (-(self.N-1)-np.sqrt((self.N-1)**2+4*self.M/self.F))/2
+        self.q2_inf = (-(self.N-1)+np.sqrt((self.N-1)**2+4*self.M))/2
+        self.q1_inf = (-(self.N-1)-np.sqrt((self.N-1)**2+4*self.M))/2
+        self.S_star = self.find_optimal_exercise_price()
+        self.euro_prices = self.bs.price()
+    
+    def return_black_scholes(self, inputdata: ClosedFormBlackScholesInput):
+        if self.future: 
+            if self.put: return BlackEuropeanVanillaPut(inputdata)
+            else: return BlackEuropeanVanillaCall(inputdata) 
+        else: 
+            if self.put: return BlackScholesEuropeanVanillaPut(inputdata)
+            else: return BlackScholesEuropeanVanillaCall(inputdata) 
+    
+    def initial_optimal_exercise_price(self) -> np.array: 
+        K, b, sigma, t = self.K, self.b, self.sigma, self.t
+        if self.put: 
+            S_star_inf = K/(1-1/self.q1_inf)  
+            h = (b*t-2*sigma*np.sqrt(t))*K/(K-S_star_inf)
+            return S_star_inf+(K-S_star_inf)*np.exp(h)
+        else: 
+            S_star_inf = K/(1-1/self.q2_inf)  
+            h = -(b*t+2*sigma*np.sqrt(t))*K/(S_star_inf-K)
+            return K+(S_star_inf-K)*(1-np.exp(h))
+    
+    def minimize_function(self, S: np.array) -> np.array:
+        inputdata = ClosedFormBlackScholesInput(
+            S = S, r = self.r, q = self.q, 
+            sigma = self.sigma, t = self.t, K = self.K
+        )
+        bs = self.return_black_scholes(inputdata=inputdata)
+        price, delta = bs.price(), bs.delta()
+        if self.put: return self.K - S - price + S*(1+delta)/self.q1
+        else: return S - self.K - price - S*(1-delta)/self.q2
+    
+    def minimize_function_derivative(self, S: np.array) -> np.array:
+        inputdata = ClosedFormBlackScholesInput(
+            S = S, r = self.r, q = self.q, 
+            sigma = self.sigma, t = self.t, K = self.K
+        )
+        bs = self.return_black_scholes(inputdata=inputdata)
+        gamma, delta = bs.gamma(), bs.delta()
+        if self.put: 
+            ratio = (1/self.q1)
+            return -1 - delta*(ratio-1) + ratio*(1+S*gamma)
+        else: 
+            ratio = (1/self.q2)
+            return 1 - delta*(1-ratio) - ratio*(1-S*gamma)
+    
+    def find_optimal_exercise_price(self) -> np.array:
+        return newton(
+            func = self.minimize_function,
+            fprime = self.minimize_function_derivative, 
+            x0 = self.initial_optimal_exercise_price())
+
+    def early_exercise(self) -> np.array: 
+        if self.put: return self.K - self.S
+        else: return self.S - self.K
+    
+    def exercise_premium(self) -> np.array: 
+        inputdata = ClosedFormBlackScholesInput(
+            S = self.S_star, 
+            r = self.r, 
+            q = self.q, 
+            sigma = self.sigma, 
+            t = self.t, 
+            K = self.K
+        )
+        bs = self.return_black_scholes(inputdata=inputdata)
+        delta = bs.delta()
+        if self.put: 
+            factor = self.S_star*((self.S/self.S_star)**self.q1)
+            return -factor*(1+delta)/self.q1
+        else: 
+            factor = self.S_star*((self.S/self.S_star)**self.q2)
+            return factor*(1-delta)/self.q2
+    
+    def vectorized_compute_prices(self, early_ex:np.array, 
+                                  exprem:np.array, 
+                                  early_ex_cond: np.array) -> np.array: 
+        exprem = np.maximum(exprem,0)
+        indexes = np.where(early_ex_cond)[0]
+        inv_cond = np.logical_not(early_ex_cond)
+        inv_indexes =  np.where(inv_cond)[0]
+        nan_index = np.where(np.isnan(self.S_star))[0]
+        result = np.zeros(self.S_star.shape)
+        try : result[indexes] = early_ex[indexes]
+        except TypeError: 
+            early_ex = np.repeat(early_ex, len(self.S_star))
+            result[indexes] = early_ex[indexes]
+        result[inv_indexes] = self.euro_prices + exprem[inv_indexes]
+        result[nan_index] = np.repeat(self.euro_prices, len(nan_index))
+        return result
+    
+    def early_exercise_cond(self) -> np.array: 
+        if self.put: return (self.S<=self.S_star)
+        else: return (self.S>=self.S_star)
+
+    def compute_prices(self) -> np.array: 
+        early_ex = self.early_exercise()
+        exercise_premium = self.exercise_premium()
+        early_exercise_cond = self.early_exercise_cond()
+        if isinstance(self.S_star, float):
+            if early_exercise_cond: result = early_ex
+            else: 
+                if np.isnan(exercise_premium): exercise_premium=0
+                result = self.euro_prices + exercise_premium#np.max([exercise_premium,0])
+        else: 
+            result = self.vectorized_compute_prices(
+                early_ex=early_ex, 
+                exprem=exercise_premium,
+                early_ex_cond=early_exercise_cond
+            )
+        return result 
+        
 @dataclass 
-class BlackScholesPutCallParity: 
+class BlackScholesParityEuropeanImpliedYield: 
     P : np.array 
     C : np.array 
     S : np.array 
     K : np.array 
+    t : np.array 
     r : np.array = None 
     
-    def __post_init__(self): 
+    def get(self) -> np.array: 
         C, P, S, K, t = self.C, self.P, self.S, self.K, self.t
         if self.r is None: 
-            self.r = np.log((C-P-S)/-K)/-t
-            try: self.q = np.repeat(0, len(self.r))
-            except Exception: self.q = 0 
-        else: self.q = np.log((C-P+K*np.exp(-self.r*t))/S)/-t
+            return np.log((C-P-S)/-K)/-t
+        else: return np.log((C-P+K*np.exp(-self.r*t))/S)/-t
+            
+@dataclass
+class BlackScholesEuropeanImpliedVolatility: 
+    price : np.array 
+    S : np.array 
+    K : np.array 
+    t : np.array 
+    r : np.array 
+    q : np.array 
+    call : bool = True 
+    future : bool = True 
+    
+    def __post_init__(self): 
+        self.sigma_0 = self.initial_sigma() 
+        self.bs = self.return_black_scholes()
+    
+    def return_black_scholes(self) -> classmethod: 
+        cond = [self.call, self.future]
+        match cond: 
+            case [True, True]: return BlackEuropeanVanillaCall
+            case [True, False]: return BlackScholesEuropeanVanillaCall
+            case [False, True]: return BlackEuropeanVanillaPut 
+            case [False, False]: return BlackScholesEuropeanVanillaPut         
+    
+    def initial_sigma(self) -> np.array: 
+        r, S, K, t = self.r, self.S, self.K, self.t
+        price = self.price
+        dK = K*np.exp(-r*t)
+        term1 = np.sqrt(2*np.pi)/(S+dK)
+        term2 = (S-dK)/2
+        term3 = ((S-dK)**2)/np.pi 
+        term4 = price - term2 
+        term5 = np.sqrt(np.maximum(term4**2 - term3,0))
+        return (term1 + term4 + term5)/(100*np.sqrt(t))
+    
+    def price_function(self, sigma:np.array) -> np.array: 
+        inputdata =  ClosedFormBlackScholesInput(
+            S = self.S,
+            r = self.r, 
+            q = self.q, 
+            sigma = sigma, 
+            t = self.t, 
+            K = self.K
+        )
+        return price - self.bs(inputdata=inputdata).price()
+        
+    def vega_function(self, sigma: np.array) -> np.array: 
+        inputdata =  ClosedFormBlackScholesInput(
+            S = self.S,
+            r = self.r, 
+            q = self.q, 
+            sigma = sigma, 
+            t = self.t, 
+            K = self.K
+        )
+        return -self.bs(inputdata=inputdata).vega() 
+    
+    def get(self) -> float: 
+        return newton(
+            func=self.price_function, 
+            x0=self.sigma_0, 
+            fprime=self.vega_function)
+
+@dataclass
+class BlackScholesEuropeanImpliedData:
+    P : np.array 
+    C : np.array 
+    S : np.array 
+    K : np.array 
+    t : np.array 
+    r : np.array = None 
+    foreign_yield : bool = False
+    future : bool = False 
+    
+    def __post_init__(self): 
+        self.n = len(self.P)
+        self.fr = self.get_foreign_yield()
+        self.dr = self.get_domestic_yield()
+    
+    def get_foreign_yield(self) -> np.array: 
+        if self.r is None: return np.repeat(0,self.n)
+        else: 
+            if self.foreign_yield: 
+                pcp = BlackScholesParityEuropeanImpliedYield(
+                    P = self.P, 
+                    C = self.C, 
+                    S = self.S, 
+                    K = self.K, 
+                    t = self.t, 
+                    r = self.r)
+                return pcp.get()
+            else: return np.repeat(0,self.n)
+    
+    def get_domestic_yield(self) -> np.array: 
+        if self.r is None: 
+            pcp = BlackScholesParityEuropeanImpliedYield(
+                    P = self.P, 
+                    C = self.C, 
+                    S = self.S, 
+                    K = self.K, 
+                    t = self.t)
+            return pcp.get() 
+        else: return self.r
+       
+    def call_implied_volatilies(self) -> np.array: 
+        bsiv = BlackScholesEuropeanImpliedVolatility(
+            price = self.C, 
+            S = self.S, 
+            K = self.K, 
+            t = self.t, 
+            r = self.dr, 
+            q = self.fr, 
+            call = True, 
+            future = self.future
+        )
+        return bsiv.get()
+    
+    def put_implied_volatilies(self) -> np.array: 
+        bsiv = BlackScholesEuropeanImpliedVolatility(
+            price = self.P, 
+            S = self.S, 
+            K = self.K, 
+            t = self.t, 
+            r = self.dr, 
+            q = self.fr, 
+            call = False, 
+            future = self.future
+        )
+        return bsiv.get()
+    
+    def get(self) -> ClosedFormBlackScholesInput: 
+        return ClosedFormBlackScholesInput(
+            S = self.S, 
+            r = self.dr, 
+            q = self.fr, 
+            sigma = self.put_implied_volatilies(), 
+            t=self.t, 
+            K=self.K)
+    
+    
+    
+    
+    
+    
 
 
 
