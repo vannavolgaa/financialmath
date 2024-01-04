@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 import numpy as np 
 from typing import List
 from scipy import interpolate
+from financialmath.marketdata.termstructure import ExtrapolatedTotalVarianceTermStructure
 from financialmath.marketdata.schemas import VolatilitySurface
 from financialmath.tools.tool import MainTool
 from financialmath.model.svi import (
@@ -18,35 +19,6 @@ class StrikeType(Enum):
     log_moneyness = 3
     forward_log_moneyness = 4
     forward_moneyness = 5
-
-@dataclass
-class ExtrapolatedTotalVarianceTermStructure: 
-    t : List[float]
-    totvariance : List[float]
-    max_t : int = 100
-
-    interpolation_method = 'cubic'
-
-    def __post_init__(self): 
-        ordered_dict = MainTool.order_join_lists(
-            keys=self.t, 
-            values=self.totvariance)
-        self.t = np.array(list(ordered_dict.keys()))
-        self.totvariance = np.array(list(ordered_dict.values()))
-        self.extrapolator = self.extrapolation()
-
-    def extrapolation(self) -> interpolate.interp1d: 
-        tvar, t = self.totvariance, self.t
-        n = len(self.tvar)
-        tvar2, t2, tvar1, t1 = tvar[n-1], t[n-1], tvar[n-2], t[n-2]
-        slope = (tvar2-tvar1)/(t2-t1)
-        max_tvar = slope*self.max_t
-        tvar = np.insert(tvar, [0, len(tvar)], [0, max_tvar])
-        t = np.insert(t, [0, len(t)], [0, self.max_t])
-        return interpolate.interp1d(t, tvar, kind = self.interpolation_method)
-    
-    def total_variance(self, t: np.array) -> np.array: 
-        return self.extrapolator(x=t)
 
 @dataclass
 class FlatVolatilitySurface(VolatilitySurface): 
@@ -225,7 +197,7 @@ class SVIVolatilitySurface(VolatilitySurface):
     
     def _compute_method(self, k: np.array, t: np.array, method:str)\
         -> np.array:
-        svi_object = self.get_svi_object(k=k, t=t)
+        svi_object = self._get_svi_object(k=k, t=t)
         result = np.zeros(k.shape)
         for s in svi_object: 
             if s.compute: 
@@ -240,22 +212,22 @@ class SVIVolatilitySurface(VolatilitySurface):
         return result
     
     def total_variance(self, k: np.array, t: np.array) -> np.array:
-        return self.compute_method(k=k, t=t, method='totalvar')
+        return self._compute_method(k=k, t=t, method='totalvar')
 
     def implied_variance(self, k: np.array, t: np.array) -> np.array:
-        return self.compute_method(k=k, t=t, method='impliedvar')
+        return self._compute_method(k=k, t=t, method='impliedvar')
     
     def implied_volatility(self, k: np.array, t: np.array) -> np.array:
-        return self.compute_method(k=k, t=t, method='impliedvol')
+        return self._compute_method(k=k, t=t, method='impliedvol')
     
     def local_volatility(self, k: np.array, t: np.array) -> np.array:
-        return self.compute_method(k=k, t=t, method='localvol')
+        return self._compute_method(k=k, t=t, method='localvol')
     
     def risk_neutral_density(self, k: np.array, t: np.array) -> np.array:
-        return self.compute_method(k=k, t=t, method='rnd')
+        return self._compute_method(k=k, t=t, method='rnd')
 
 
-    
+
         
     
      
