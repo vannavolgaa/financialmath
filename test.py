@@ -1,7 +1,10 @@
 import numpy as np 
-from financialmath.model.americanquadratic import (
-    QuadraticApproximationAmericanVanilla)
-from financialmath.model.blackscholes.closedform import ClosedFormBlackScholesInput
+#from financialmath.model.americanquadratic import (
+ #   QuadraticApproximationAmericanVanilla)
+from financialmath.model.blackscholes.closedform import (
+    ClosedFormBlackScholesInput, 
+    QuadraticApproximationAmericanVanilla
+)
 from financialmath.instruments.option import *
 from financialmath.pricing.option.pde import (
     PDEBlackScholesValuation, 
@@ -36,7 +39,9 @@ pdetest = pdepricer.valuation()
 print(pdetest.price)
 print(qame.compute_prices())
 
-
+qame.euro_prices
 #qame.initial_optimal_exercise_price()
 
 #qame.S_star
+
+

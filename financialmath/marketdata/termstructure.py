@@ -6,6 +6,7 @@ import numpy as np
 from typing import List
 from scipy import interpolate
 from financialmath.marketdata.schemas import TermStructure
+from financialmath.tools.tool import MainTool
 
 @dataclass
 class ExtrapolatedTotalVarianceTermStructure(TermStructure): 
