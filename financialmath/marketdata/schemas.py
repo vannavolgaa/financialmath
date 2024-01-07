@@ -33,6 +33,7 @@ class YieldCurve(ABC):
     def forward_rate(self, t:np.array, T:np.array) -> np.array: 
         pass 
 
+    @abstractmethod
     def continuous_discount_factor(self, t:np.array) -> np.array: 
         zr = self.rate(t=t)
         return np.exp(-zr*t)
