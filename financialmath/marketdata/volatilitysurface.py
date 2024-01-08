@@ -11,6 +11,7 @@ from financialmath.model.svi import (
     SSVIFunctions, 
     SurfaceSVI
     )
+from financialmath.model.parametricvolatility import ParametricVolatility
 
 class VolatilitySurface(ABC): 
 
@@ -42,28 +43,9 @@ class StrikeType(Enum):
     forward_moneyness = 5
 
 @dataclass
-class FlatVolatilitySurface(VolatilitySurface): 
-    volatility : float 
-
-    def implied_variance(self, k: np.array, t: np.array) -> np.array:
-        n = len(k)*len(t)
-        return np.repeat(self.volatility**2,n)
+class ParametricVolatilitySurface(VolatilitySurface): 
+    inputdata: List[ParametricVolatility]
     
-    def total_variance(self, k: np.array, t: np.array) -> np.array:
-        n = len(k)
-        return np.repeat(t*(self.volatility**2),n)
-    
-    def implied_volatility(self, k: np.array, t: np.array) -> np.array:
-        n = len(k)*len(t)
-        return np.repeat(self.volatility,n)
-    
-    def local_volatility(self, k: np.array, t: np.array) -> np.array:
-        n = len(k)*len(t)
-        return np.repeat(self.volatility,n)
-    
-    def skew(self, k: np.array, t: np.array) -> np.array:
-        n = len(k)*len(t)
-        return np.repeat(0,n)
 
 @dataclass
 class SSVIVolatilitySurface(VolatilitySurface): 

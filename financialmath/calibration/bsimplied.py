@@ -7,7 +7,7 @@ from financialmath.model.blackscholes.closedform import (
     QuadraticApproximationAmericanVanilla
     )
 from financialmath.model.parametricvolatility import ParametricVolatility
-from financialmath.calibration.parametricvolatility import LeastSquareRegressionParametricVolatility
+from financialmath.calibration.volatilitysurface import LeastSquareRegressionParametricVolatility
 
 @dataclass 
 class EuropeanVanillaParityImpliedYield: 
