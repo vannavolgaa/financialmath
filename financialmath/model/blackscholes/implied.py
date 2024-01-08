@@ -1,10 +1,13 @@
 from dataclasses import dataclass
 import numpy as np 
 from py_lets_be_rational import implied_volatility_from_a_transformed_rational_guess
-from scipy import interpolate
+from scipy import interpolate, optimize
 from financialmath.model.blackscholes.closedform import (
     ClosedFormBlackScholesInput, 
+    QuadraticApproximationAmericanVanilla
     )
+from financialmath.model.parametricvolatility import ParametricVolatility
+from financialmath.calibration.parametricvolatility import LeastSquareRegressionParametricVolatility
 
 @dataclass 
 class EuropeanVanillaParityImpliedYield: 
@@ -169,7 +172,9 @@ class AmericanVanillaImpliedData:
     future : bool = False 
 
     def __post_init__(self): 
-        if self.future: self.carry_cost = False
+        if self.future: 
+            self.carry_cost = False
+        self.t_unique = sorted(np.array(list(set(self.t))))
         self.n = len(self.P)
         self.euro = EuropeanVanillaImpliedData(
                     P = self.P, 
@@ -181,13 +186,100 @@ class AmericanVanillaImpliedData:
                     carry_cost=self.carry_cost, 
                     future=self.future)
         self.eurodata = self.euro.get()
+        self.ycts = self.euro.ycts
     
-    def parametric_smile(self, lm: np.array, b0:float, b1:float, b2:float)\
-        -> np.array: 
-        return b0 + b1*np.log(lm) + b2*np.log(lm)**2
+    def loss_function(self, x:np.array, t:float) -> float: 
+        tpos = np.where(self.t == t)
+        t, K, S, put_price, call_price = t[tpos], K[tpos], S[tpos], \
+            self.P[tpos], self.C[tpos]
+        if self.r is None: 
+            b0, b1, b2, q, r = x[0], x[1], x[2], 0, x[3]
+        else: 
+            r = self.ycts(t)
+            if self.carry_cost: 
+                b0, b1, b2, q = x[0], x[1], x[2], x[3]
+            else: 
+                b0, b1, b2, q = x[0], x[1], x[2], 0
+        if self.future: k = K/S
+        else: k = K/(S*np.exp((r-q)*t))            
+        volmodel = ParametricVolatility(b0 = b0, b1 = b1, b2 = b2)
+        inputdata = ClosedFormBlackScholesInput(
+            S = S, r = r, q = q, K = K, t = t,
+            sigma = volmodel.implied_volatility(k=k, t=t))
+        ame_call = QuadraticApproximationAmericanVanilla(
+            inputdata = inputdata, future = self.future,  put = False)
+        ame_put = QuadraticApproximationAmericanVanilla(
+            inputdata = inputdata, future = self.future, put = True)
+        model_put_price = ame_put.compute_prices()
+        model_call_price = ame_call.compute_prices()
+        market = put_price+call_price
+        model = model_put_price+model_call_price
+        return np.sum((market-model)**2/model)
     
-    def loss_function(self, x): 
-        pass
+    def calibrate_slice(self, t: float) -> np.array: 
+        ed = self.eurodata
+        tpos = np.where(self.t == t)
+        S, K, sigma, r, q = ed.S[tpos], ed.K[tpos], ed.sigma[tpos],\
+            ed.r[tpos], ed.q[tpos]
+        if self.future: k = K/S
+        else: k = K/(S*np.exp((r-q)*t))
+        lrreg = LeastSquareRegressionParametricVolatility(
+            ivs = sigma, k=k, t=t, smile=True)
+        x_0 = lrreg.coefficients()
+        if self.r is None: x_0 = np.insert(x_0, 3, self.ycts(t))  
+        else: 
+            if self.carry_cost: x_0 = np.insert(x_0, 3, self.ccts(t))  
+        fit = optimize.minimize(
+            fun = self.loss_function, 
+            x0 = x_0, 
+            args=(t,), 
+            method = 'Nelder-Mead')
+        return fit.x
+    
+    def get(self) -> ClosedFormBlackScholesInput:
+        implied_volatilities = np.zeros(self.P.shape)
+        yields = np.zeros(self.P.shape)
+        carry_cost = np.zeros(self.P.shape)
+        for t in self.t_unique: 
+            tpos = np.where(self.t == t)
+            if len(tpos)<4: 
+                nanvec = np.rep(np.nan, len(tpos))
+                implied_volatilities[tpos] = nanvec 
+                yields[tpos] = nanvec
+                carry_cost[tpos] = nanvec
+                continue
+            cslice = self.calibrate_slice(t=t)
+            b0, b1, b2 = cslice[0], cslice[1], cslice[2]
+            volmodel = ParametricVolatility(b0 = b0, b1 = b1, b2 = b2)
+            if self.r is None: r,q = cslice[3], 0
+            else: 
+                r = self.ycts(t)
+                if self.carry_cost: q = cslice[3]
+                else: q = 0  
+            K, S = self.K[tpos], self.S[tpos] 
+            k = K/(S*np.exp((r-q)*t))
+            sigma = volmodel.implied_volatility(k=k, t=t)
+            implied_volatilities[tpos] = sigma 
+            yields[tpos] = np.rep(r, len(tpos))
+            carry_cost[tpos] = np.rep(q, len(tpos))
+        return ClosedFormBlackScholesInput(
+            S=self.S, 
+            r=self.r, 
+            q=self.q, 
+            sigma=self.implied_volatilities, 
+            t=self.t, 
+            K=self.K)
+            
+                     
+        
+        
+            
+            
+                
+    
+        
+        
+        
 
 
 

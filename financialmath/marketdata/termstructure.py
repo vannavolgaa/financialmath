@@ -8,6 +8,27 @@ from scipy import interpolate
 from financialmath.marketdata.schemas import TermStructure
 from financialmath.tools.tool import MainTool
 
+class YieldCurve(ABC): 
+
+    @abstractmethod
+    def rate(self, t:np.array) -> np.array: 
+        pass 
+
+    @abstractmethod
+    def forward_rate(self, t:np.array, T:np.array) -> np.array: 
+        pass 
+
+    @abstractmethod
+    def continuous_discount_factor(self, t:np.array) -> np.array: 
+        zr = self.rate(t=t)
+        return np.exp(-zr*t)
+
+class TermStructure(ABC): 
+
+    @abstractmethod
+    def rate(self, t:np.array) -> np.array: 
+        pass
+
 @dataclass
 class ExtrapolatedTotalVarianceTermStructure(TermStructure): 
     t : List[float]

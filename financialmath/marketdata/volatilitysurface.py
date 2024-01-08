@@ -5,13 +5,34 @@ import numpy as np
 from typing import List
 from scipy import interpolate
 from financialmath.marketdata.termstructure import ExtrapolatedTotalVarianceTermStructure
-from financialmath.marketdata.schemas import VolatilitySurface
 from financialmath.tools.tool import MainTool
 from financialmath.model.svi import (
     StochasticVolatilityInspired, 
     SSVIFunctions, 
     SurfaceSVI
     )
+
+class VolatilitySurface(ABC): 
+
+    @abstractmethod
+    def implied_variance(self, k:np.array, t: np.array) -> np.array: 
+        pass 
+
+    @abstractmethod
+    def total_variance(self, k:np.array, t: np.array) -> np.array: 
+        pass 
+
+    @abstractmethod
+    def implied_volatility(self, k:np.array, t: np.array) -> np.array: 
+        pass 
+
+    @abstractmethod
+    def local_volatility(self, k:np.array, t: np.array) -> np.array: 
+        pass 
+
+    @abstractmethod
+    def risk_neutral_density(self, k:np.array, t:np.array) -> np.array: 
+        pass 
 
 class StrikeType(Enum): 
     strike = 1 
